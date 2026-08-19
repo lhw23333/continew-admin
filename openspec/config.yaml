@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  Product: multi-tenant payment agent and merchant onboarding management platform.
+  Backend: Java 17, Spring Boot 3.3.12, ContiNew Admin 4.1.0, ContiNew Starter 2.14.0,
+  Sa-Token, MyBatis-Plus, Redis/Redisson, Liquibase, X File Storage and SnailJob.
+  Frontend: Vue 3.5, TypeScript, Vite 5, Arco Design and Pinia.
+  Phase one introduces Flowable 7.x process engine only. LiteFlow is explicitly out of scope.
+  ContiNew remains the identity, RBAC, tenant, data-permission, file, notification and audit foundation.
+  Domain tables are the source of truth for merchant, KYC, channel, amount and status data.
+  Flowable variables contain identifiers, versions and non-sensitive routing metadata only.
+  Raw identity numbers, bank account numbers, mobile numbers, passwords and attachment URLs
+  must not be persisted as Flowable variables.
+  All examples, scenarios and screenshots must avoid real production personal or financial data.
+
+rules:
+  proposal:
+    - Include explicit phase-one scope and non-goals.
+    - Identify every new capability that receives a delta spec.
+  specs:
+    - Use RFC 2119 normative language (MUST, SHALL, SHOULD, MAY).
+    - Give every requirement a stable trace ID matching the source requirements document.
+    - Include at least one GIVEN/WHEN/THEN scenario for every requirement.
+    - State tenant, agent-tree and sensitive-data boundaries wherever applicable.
+    - Reference safe screenshots with repository-relative paths when visual evidence exists.
+  design:
+    - Separate Flowable process state from domain business state.
+    - Document transaction, idempotency, process versioning and failure-recovery decisions.
+    - Document rejected alternatives and migration/rollback strategy.
+  tasks:
+    - Group tasks by deliverable and keep each task independently verifiable.
+    - Include automated tests, security tests, migration validation and operational runbooks.

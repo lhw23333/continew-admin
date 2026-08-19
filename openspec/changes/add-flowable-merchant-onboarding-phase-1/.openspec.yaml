@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-19
+goal: Produce an implementation-ready, strictly validated OpenSpec change for
+  agent management, merchant master data, KYC onboarding, approval workflow,
+  channel integration, settlement operations, reporting, and security controls.
