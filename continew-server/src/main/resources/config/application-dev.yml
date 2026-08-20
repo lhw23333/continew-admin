@@ -214,6 +214,8 @@ continew-starter.messaging.websocket:
   allowed-origins: '*'
 
 --- ### Sa-Token 扩展配置
+sa-token.jwt-secret-key: ${SA_TOKEN_JWT_SECRET:dev-only-insecure-jwt-secret-change-before-production}
+
 sa-token.extension:
   # 安全配置：排除（放行）路径配置
   security.excludes:

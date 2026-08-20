@@ -11,6 +11,18 @@ databaseChangeLog:
       file: db/changelog/mysql/plugin/plugin_schedule.sql
   - include:
       file: db/changelog/mysql/plugin/plugin_generator.sql
+  - include:
+      file: db/changelog/mysql/merchant/merchant-core.sql
+  - include:
+      file: db/changelog/mysql/merchant/sensitive-key-versions.sql
+  - include:
+      file: db/changelog/mysql/merchant/merchant-operations.sql
+  - include:
+      file: db/changelog/mysql/merchant/merchant-constraints.sql
+  - include:
+      file: db/changelog/mysql/merchant/merchant-indexes.sql
+  - include:
+      file: db/changelog/mysql/flowable/flowable-7.1.0.sql
 # PostgreSQL
 #  - include:
 #      file: db/changelog/postgresql/main_table.sql

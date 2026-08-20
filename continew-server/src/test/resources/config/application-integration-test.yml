@@ -1,0 +1,57 @@
+spring:
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+  datasource:
+    url: jdbc:h2:mem:continew_admin_context;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  liquibase:
+    enabled: false
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+jetcache:
+  local:
+    default:
+      type: caffeine
+
+continew-starter:
+  captcha:
+    graphic:
+      expirationInMinutes: 2
+  encrypt:
+    password-encoder:
+      enabled: true
+      algorithm: BCRYPT
+  rate-limiter:
+    enabled: false
+
+snail-job:
+  enabled: false
+  namespace: integration-test
+  server:
+    api:
+      url: http://127.0.0.1:1/snail-job
+      username: integration-test
+      password: integration-test
+
+cosid:
+  enabled: true
+  machine:
+    distributor:
+      type: MANUAL
+      manual:
+        machine-id: 1
+
+sa-token:
+  jwt-secret-key: integration-test-only-jwt-secret-value
+  extension:
+    dao:
+      type: DEFAULT
+
+flowable:
+  database-schema-update: true

@@ -1,32 +1,32 @@
 ## 1. Dependency, Licensing, and Build Baseline
 
-- [ ] 1.1 Create a compatibility spike that boots ContiNew 4.1.0 with a candidate Flowable 7.x process starter on Java 17 and Spring Boot 3.3.12
-- [ ] 1.2 Run Maven dependency convergence and document/pin compatible Spring, MyBatis, Jackson, Liquibase, and logging versions
-- [ ] 1.3 Record Apache-2.0 Flowable usage, ContiNew Starter LGPL obligations, notices, and generated SBOM in the release documentation
-- [ ] 1.4 Remove global test skipping and add separate fast-unit and integration-test Maven profiles
-- [ ] 1.5 Add CI gates for backend tests, frontend typecheck/lint/tests, OpenSpec strict validation, dependency vulnerability scan, and secret scan
+- [x] 1.1 Create a compatibility spike that boots ContiNew 4.1.0 with a candidate Flowable 7.x process starter on Java 17 and Spring Boot 3.3.12
+- [x] 1.2 Run Maven dependency convergence and document/pin compatible Spring, MyBatis, Jackson, Liquibase, and logging versions
+- [x] 1.3 Record Apache-2.0 Flowable usage, ContiNew Starter LGPL obligations, notices, and generated SBOM in the release documentation
+- [x] 1.4 Remove global test skipping and add separate fast-unit and integration-test Maven profiles
+- [x] 1.5 Add CI gates for backend tests, frontend typecheck/lint/tests, OpenSpec strict validation, dependency vulnerability scan, and secret scan
 
 ## 2. Module and Application Boundaries
 
-- [ ] 2.1 Add the `continew-extension-workflow` Maven module with no merchant-domain implementation dependencies
-- [ ] 2.2 Add the `continew-merchant` Maven module for agent, merchant, KYC, review, and limit domain/application services
-- [ ] 2.3 Add the `continew-channel` Maven module with project-owned channel ports and no Flowable API dependency
-- [ ] 2.4 Define module-owned API/DTO packages and architecture tests preventing domain services from importing Flowable implementation classes
-- [ ] 2.5 Register new modules in `continew-server` and verify application startup with both MySQL and PostgreSQL test profiles
+- [x] 2.1 Add the `continew-extension-workflow` Maven module with no merchant-domain implementation dependencies
+- [x] 2.2 Add the `continew-merchant` Maven module for agent, merchant, KYC, review, and limit domain/application services
+- [x] 2.3 Add the `continew-channel` Maven module with project-owned channel ports and no Flowable API dependency
+- [x] 2.4 Define module-owned API/DTO packages and architecture tests preventing domain services from importing Flowable implementation classes
+- [x] 2.5 Register new modules in `continew-server` and verify application startup with both MySQL and PostgreSQL test profiles
 
 ## 3. Database Schema and Migration
 
-- [ ] 3.1 Select a Flowable schema or table prefix and add reviewed production migrations with automatic schema update disabled
-- [ ] 3.2 Add Liquibase migrations for agent, agent closure/path, merchant, onboarding application, KYC version, and KYC attachment tables
-- [ ] 3.3 Add migrations for pricing versions, review records, workflow mappings, limit requests, outbox events, and channel events
-- [ ] 3.4 Add unique constraints for merchant legal identity hash, active onboarding idempotency key, workflow business key, outbox key, and channel event key
-- [ ] 3.5 Add tenant/agent/status/time composite indexes for list, task, callback, and workbench queries and verify query plans on representative data
-- [ ] 3.6 Add migration rollback/forward validation tests and database backup/restore instructions for domain and Flowable tables
+- [x] 3.1 Select a Flowable schema or table prefix and add reviewed production migrations with automatic schema update disabled
+- [x] 3.2 Add Liquibase migrations for agent, agent closure/path, merchant, onboarding application, KYC version, and KYC attachment tables
+- [x] 3.3 Add migrations for pricing versions, review records, workflow mappings, limit requests, outbox events, and channel events
+- [x] 3.4 Add unique constraints for merchant legal identity hash, active onboarding idempotency key, workflow business key, outbox key, and channel event key
+- [x] 3.5 Add tenant/agent/status/time composite indexes for list, task, callback, and workbench queries and verify query plans on representative data
+- [x] 3.6 Add migration rollback/forward validation tests and database backup/restore instructions for domain and Flowable tables
 
 ## 4. Sensitive Data and Logging Foundation
 
-- [ ] 4.1 Replace repository/default production encryption keys and channel secrets with environment or approved secret-manager references and fail startup on placeholders
-- [ ] 4.2 Implement encrypted identity, bank-account, and mobile value objects with key version, normalized keyed hash, and masked display value
+- [x] 4.1 Replace repository/default production encryption keys and channel secrets with environment or approved secret-manager references and fail startup on placeholders
+- [x] 4.2 Implement encrypted identity, bank-account, and mobile value objects with key version, normalized keyed hash, and masked display value
 - [ ] 4.3 Implement server-side masking policies and privileged-reveal API with business-scope check, reason, step-up authentication, no-store headers, and immutable audit
 - [ ] 4.4 Configure KYC, password, channel, file, reveal, and export endpoints to exclude or sanitize request/response bodies before access-log persistence
 - [ ] 4.5 Implement the Flowable variable name/type allowlist and automated rejection tests for raw KYC objects, credentials, binary data, and attachment URLs

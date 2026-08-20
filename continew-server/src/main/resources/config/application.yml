@@ -252,8 +252,6 @@ sa-token:
   is-share: false
   # 是否输出操作日志
   is-log: false
-  # JWT 秘钥
-  jwt-secret-key: asdasdasifhueuiwyurfewbfjsdafjk
   ## 扩展配置
   extension:
     enabled: true
@@ -333,6 +331,17 @@ cosid:
           radix:
             char-size: 11
             pad-start: true
+
+--- ### Flowable 流程引擎配置
+flowable:
+  # 生产和普通开发环境禁止自动修改表结构，统一由 Liquibase 管理
+  database-schema-update: false
+  # ContiNew 用户/角色是唯一身份源，不启动 Flowable IDM
+  idm:
+    enabled: false
+  # 一期不使用 Event Registry，避免引入无业务用途的引擎和表
+  eventregistry:
+    enabled: false
 
 --- ### 认证配置
 auth:

@@ -1,0 +1,14 @@
+spring:
+  liquibase:
+    enabled: true
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+
+flowable:
+  database-schema-update: false
+
+mybatis-plus:
+  configuration:
+    database-id: mysql
+  extension:
+    pagination:
+      db-type: MYSQL

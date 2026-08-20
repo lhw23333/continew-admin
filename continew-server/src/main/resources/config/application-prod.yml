@@ -16,12 +16,12 @@ spring.datasource:
   # 请务必提前创建好名为 continew_admin 的数据库，如果使用其他数据库名请注意同步修改 DB_NAME 配置
   url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:continew_admin}?serverTimezone=Asia/Shanghai&useSSL=true&useUnicode=true&characterEncoding=utf8&rewriteBatchedStatements=true&autoReconnect=true&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true
   username: ${DB_USER:root}
-  password: ${DB_PWD:123456}
+  password: ${DB_PWD}
   driver-class-name: com.mysql.cj.jdbc.Driver
   #  # PostgreSQL 配置
   #  url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:continew_admin}?options=-c%20TimeZone=Asia/Shanghai&sslmode=prefer&channelBinding=prefer&stringtype=unspecified
   #  username: ${DB_USER:postgres}
-  #  password: ${DB_PWD:123456}
+  #  password: ${DB_PWD}
   #  driver-class-name: org.postgresql.Driver
   # Hikari 连接池配置
   hikari:
@@ -52,7 +52,7 @@ spring.data:
     # 端口（默认 6379）
     port: ${REDIS_PORT:6379}
     # 密码（未设置密码时请注释掉）
-    password: ${REDIS_PWD:123456}
+    password: ${REDIS_PWD}
     # 数据库索引
     database: ${REDIS_DB:0}
     # 连接超时时间
@@ -140,10 +140,19 @@ continew-starter.encrypt.field:
   # 默认算法，即 @FieldEncrypt 默认采用的算法（默认：AES 对称加密算法）
   algorithm: AES
   # 对称加密算法密钥
-  password: abcdefghijklmnop
+  password: ${FIELD_ENCRYPTION_PASSWORD}
   # 非对称加密算法密钥（在线生成 RSA 密钥对：http://web.chacuo.net/netrsakeypair）
-  public-key: MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAM51dgYtMyF+tTQt80sfFOpSV27a7t9uaUVeFrdGiVxscuizE7H8SMntYqfn9lp8a5GH5P1/GGehVjUD2gF/4kcCAwEAAQ==
-  private-key: MIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7AgEAAkEAznV2Bi0zIX61NC3zSx8U6lJXbtru325pRV4Wt0aJXGxy6LMTsfxIye1ip+f2WnxrkYfk/X8YZ6FWNQPaAX/iRwIDAQABAkEAk/VcAusrpIqA5Ac2P5Tj0VX3cOuXmyouaVcXonr7f+6y2YTjLQuAnkcfKKocQI/juIRQBFQIqqW/m1nmz1wGeQIhAO8XaA/KxzOIgU0l/4lm0A2Wne6RokJ9HLs1YpOzIUmVAiEA3Q9DQrpAlIuiT1yWAGSxA9RxcjUM/1kdVLTkv0avXWsCIE0X8woEjK7lOSwzMG6RpEx9YHdopjViOj1zPVH61KTxAiBmv/dlhqkJ4rV46fIXELZur0pj6WC3N7a4brR8a+CLLQIhAMQyerWl2cPNVtE/8tkziHKbwW3ZUiBXU24wFxedT9iV
+  public-key: ${FIELD_ENCRYPTION_PUBLIC_KEY}
+  private-key: ${FIELD_ENCRYPTION_PRIVATE_KEY}
+
+--- ### 商户敏感数据与渠道密钥引用
+merchant:
+  security:
+    data-key-ref: ${MERCHANT_DATA_KEY_REF}
+    hash-key-ref: ${MERCHANT_HASH_KEY_REF}
+  channel:
+    signing-key-ref: ${MERCHANT_CHANNEL_SIGNING_KEY_REF}
+    encryption-key-ref: ${MERCHANT_CHANNEL_ENCRYPTION_KEY_REF}
 
 --- ### 验证码配置
 continew-starter.captcha:
@@ -223,6 +232,8 @@ continew-starter.messaging.websocket:
     - ${application.url}
 
 --- ### Sa-Token 扩展配置
+sa-token.jwt-secret-key: ${SA_TOKEN_JWT_SECRET}
+
 sa-token.extension:
   # 安全配置：排除（放行）路径配置
   security.excludes:
@@ -238,35 +249,24 @@ sa-token.extension:
 
 --- ### Just Auth 配置
 justauth:
-  enabled: true
-  type:
-    WECHAT_OPEN:
-      client-id: wx4a**********bcc2
-      client-secret: 32e5*************************1ef
-      redirect-uri: ${application.url}/social/callback?source=wechat_open
-    GITEE:
-      client-id: 5d271b7f638941812aaf8bfc2e2f08f06d6235ef934e0e39537e2364eb8452c4
-      client-secret: 1f7d08**********5b7**********29e
-      redirect-uri: ${application.url}/social/callback?source=gitee
-    GITHUB:
-      client-id: 38080dad08cfbdfacca9
-      client-secret: 1f7d08**********5b7**********29e
-      redirect-uri: ${application.url}/social/callback?source=github
+  # 生产默认关闭；启用时通过外部配置/密钥管理器提供具体平台的 client-id/client-secret
+  enabled: ${JUSTAUTH_ENABLED:false}
   cache:
     type: REDIS
 
 --- ### Snail Job 配置
 snail-job:
+  enabled: ${SCHEDULE_ENABLED:false}
   # 客户端地址（默认自动获取本机 IP）
   #host: 127.0.0.1
   # 客户端端口（默认：1789）
   port: 1789
   # 命名空间 ID
-  namespace: ${SCHEDULE_NAMESPACE:764d604ec6fc45f68cd92514c40e9e1a}
+  namespace: ${SCHEDULE_NAMESPACE:}
   # 分组名
   group: ${SCHEDULE_GROUP:continew-admin}
   # 令牌
-  token: ${SCHEDULE_TOKEN:SJ_Wyz3dmsdbDOkDujOTSSoBjGQP1BMsVnj}
+  token: ${SCHEDULE_TOKEN:}
   ## 服务端配置（任务调度中心）
   server:
     # 服务端地址，若服务端集群部署则此处配置域名
@@ -276,8 +276,8 @@ snail-job:
     # API 配置
     api:
       # URL
-      url: http://127.0.0.1:8001/snail-job
+      url: ${SCHEDULE_API_URL:http://127.0.0.1:8001/snail-job}
       # 用户名
-      username:  ${SCHEDULE_USERNAME:admin}
+      username: ${SCHEDULE_USERNAME:}
       # 密码
-      password:  ${SCHEDULE_PASSWORD:admin}
+      password: ${SCHEDULE_PASSWORD:}
