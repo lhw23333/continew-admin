@@ -26,8 +26,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 class WorkflowArchitectureTest {
 
     @ArchTest
-    static final ArchRule PUBLIC_CONTRACTS_MUST_NOT_IMPORT_FLOWABLE = noClasses()
-        .that()
+    static final ArchRule PUBLIC_CONTRACTS_MUST_NOT_IMPORT_FLOWABLE = noClasses().that()
         .resideInAnyPackage("top.continew.admin.workflow.api..", "top.continew.admin.workflow.dto..")
         .should()
         .dependOnClassesThat()

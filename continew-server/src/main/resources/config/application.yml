@@ -155,6 +155,23 @@ continew-starter.web.response:
 --- ### 日志配置
 ## API 请求/响应日志配置
 continew-starter.log:
+  access-log:
+    # 访问日志仅打印参数时也必须遮蔽认证、KYC、银行卡和手机号字段
+    param-sensitive: true
+    sensitive-params:
+      - password
+      - oldPassword
+      - newPassword
+      - paymentPassword
+      - identityNumber
+      - legalIdentifier
+      - bankAccount
+      - bankAccountNumber
+      - mobile
+      - phone
+      - reservedMobile
+      - token
+      - secret
   # 记录信息
   includes:
     - DESCRIPTION
@@ -166,6 +183,17 @@ continew-starter.log:
     - OS
     - RESPONSE_HEADERS
     - RESPONSE_BODY
+
+--- ### KYC 私有附件配置
+merchant.kyc:
+  # 必须指向专用 S3/MinIO 私有 Bucket 对应的 X File Storage 平台编码
+  storage-code: ${KYC_PRIVATE_STORAGE_CODE:}
+  # 部署方确认 Bucket 禁止公开读后才允许上传
+  private-bucket-acknowledged: ${KYC_PRIVATE_BUCKET_ACKNOWLEDGED:false}
+  max-size-bytes: ${KYC_ATTACHMENT_MAX_SIZE_BYTES:10485760}
+  max-per-evidence-type: ${KYC_ATTACHMENT_MAX_PER_TYPE:5}
+  max-per-version: ${KYC_ATTACHMENT_MAX_PER_VERSION:20}
+  access-expiry: ${KYC_ATTACHMENT_ACCESS_EXPIRY:PT5M}
 ## 项目日志配置
 logging:
   config: classpath:logback-spring.xml
@@ -352,4 +380,5 @@ auth:
       - /auth/user/info
       - /auth/logout
       - /system/user/password
+      - /user/profile/password
 

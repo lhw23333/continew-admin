@@ -100,7 +100,7 @@ public class SaTokenConfiguration {
                     return;
                 }
                 UserContext userContext = UserContextHolder.getContext();
-                CheckUtils.throwIf(userContext.isPasswordExpired(), "密码已过期，请修改密码");
+                CheckUtils.throwIf(userContext.isPasswordChangeRequired(), "当前为临时密码，请先修改密码");
             }));
     }
 

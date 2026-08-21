@@ -20,7 +20,7 @@ package top.continew.admin.workflow.dto;
  * Engine-neutral reference returned by workflow commands.
  *
  * @param processInstanceId process instance identifier
- * @param businessKey stable business key
+ * @param businessKey       stable business key
  */
 public record WorkflowRef(String processInstanceId, String businessKey) {
 }

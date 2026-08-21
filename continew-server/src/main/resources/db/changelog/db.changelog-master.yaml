@@ -14,7 +14,11 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/merchant-core.sql
   - include:
+      file: db/changelog/mysql/merchant/agent-identity.sql
+  - include:
       file: db/changelog/mysql/merchant/sensitive-key-versions.sql
+  - include:
+      file: db/changelog/mysql/merchant/security-audit.sql
   - include:
       file: db/changelog/mysql/merchant/merchant-operations.sql
   - include:

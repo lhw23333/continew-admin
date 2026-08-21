@@ -63,6 +63,9 @@ public class UserContext implements Serializable {
      */
     private LocalDateTime pwdResetTime;
 
+    /** Whether the current credential is temporary and must be changed immediately. */
+    private Boolean mustChangePassword;
+
     /**
      * 登录时系统设置的密码过期天数
      */
@@ -129,6 +132,15 @@ public class UserContext implements Serializable {
             return false;
         }
         return this.pwdResetTime.plusDays(this.passwordExpirationDays).isBefore(LocalDateTime.now());
+    }
+
+    /**
+     * 是否必须修改密码
+     *
+     * @return true：是；false：否
+     */
+    public boolean isPasswordChangeRequired() {
+        return Boolean.TRUE.equals(this.mustChangePassword) || this.isPasswordExpired();
     }
 
     /**

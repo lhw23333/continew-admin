@@ -29,4 +29,11 @@ class MerchantArchitectureTest {
     static final ArchRule MERCHANT_MUST_NOT_IMPORT_FLOWABLE = noClasses().should()
         .dependOnClassesThat()
         .resideInAnyPackage("org.flowable..", "top.continew.admin.workflow.internal..");
+
+    @ArchTest
+    static final ArchRule SENSITIVE_SERVICES_MUST_NOT_DEPEND_ON_GENERIC_CACHE_OR_EXPORT = noClasses().that()
+        .resideInAnyPackage("..merchant.security..", "..merchant.kyc.attachment..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("com.alicp.jetcache..", "org.springframework.cache..", "top.continew.starter.excel..");
 }

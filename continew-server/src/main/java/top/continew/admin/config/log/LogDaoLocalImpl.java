@@ -69,10 +69,27 @@ public class LogDaoLocalImpl implements LogDao {
     private final UserService userService;
     private final LogMapper logMapper;
     private final TraceProperties traceProperties;
+    private final SensitiveEndpointLogSanitizer sanitizer;
 
     @Async
     @Override
     public void add(LogRecord logRecord) {
+        LogDO logDO = this.toDataObject(logRecord);
+        LogRequest logRequest = logRecord.getRequest();
+        // 保存记录
+        if (TenantContextHolder.isTenantEnabled()) {
+            // 异步无法获取租户 ID
+            String tenantId = logRequest.getHeaders()
+                .get(SpringUtil.getBean(TenantProperties.class).getTenantIdHeader());
+            if (StrUtil.isNotBlank(tenantId)) {
+                TenantUtils.execute(Long.parseLong(tenantId), () -> logMapper.insert(logDO));
+                return;
+            }
+        }
+        logMapper.insert(logDO);
+    }
+
+    LogDO toDataObject(LogRecord logRecord) {
         LogDO logDO = new LogDO();
         // 设置请求信息
         LogRequest logRequest = logRecord.getRequest();
@@ -89,17 +106,7 @@ public class LogDaoLocalImpl implements LogDao {
         logDO.setCreateTime(LocalDateTime.ofInstant(logRecord.getTimestamp(), ZoneId.systemDefault()));
         // 设置操作人
         this.setCreateUser(logDO, logRequest, logResponse);
-        // 保存记录
-        if (TenantContextHolder.isTenantEnabled()) {
-            // 异步无法获取租户 ID
-            String tenantId = logRequest.getHeaders()
-                .get(SpringUtil.getBean(TenantProperties.class).getTenantIdHeader());
-            if (StrUtil.isNotBlank(tenantId)) {
-                TenantUtils.execute(Long.parseLong(tenantId), () -> logMapper.insert(logDO));
-                return;
-            }
-        }
-        logMapper.insert(logDO);
+        return logDO;
     }
 
     /**
@@ -111,8 +118,8 @@ public class LogDaoLocalImpl implements LogDao {
     private void setRequest(LogDO logDO, LogRequest logRequest) {
         logDO.setRequestMethod(logRequest.getMethod());
         logDO.setRequestUrl(logRequest.getUrl().toString());
-        logDO.setRequestHeaders(JSONUtil.toJsonStr(logRequest.getHeaders()));
-        logDO.setRequestBody(logRequest.getBody());
+        logDO.setRequestHeaders(JSONUtil.toJsonStr(sanitizer.sanitizeHeaders(logRequest.getHeaders())));
+        logDO.setRequestBody(sanitizer.sanitizeBody(logDO.getRequestUrl(), logRequest.getBody()));
         logDO.setIp(logRequest.getIp());
         logDO.setAddress(logRequest.getAddress());
         logDO.setBrowser(logRequest.getBrowser());
@@ -127,19 +134,20 @@ public class LogDaoLocalImpl implements LogDao {
      */
     private void setResponse(LogDO logDO, LogResponse logResponse) {
         Map<String, String> responseHeaders = logResponse.getHeaders();
-        logDO.setResponseHeaders(JSONUtil.toJsonStr(responseHeaders));
+        logDO.setResponseHeaders(JSONUtil.toJsonStr(sanitizer.sanitizeHeaders(responseHeaders)));
         logDO.setTraceId(responseHeaders.get(traceProperties.getTraceIdName()));
         String responseBody = logResponse.getBody();
-        logDO.setResponseBody(responseBody);
+        String persistedResponseBody = sanitizer.sanitizeBody(logDO.getRequestUrl(), responseBody);
+        logDO.setResponseBody(persistedResponseBody);
         // 状态
         Integer statusCode = logResponse.getStatus();
         logDO.setStatusCode(statusCode);
         logDO.setStatus(statusCode >= HttpStatus.HTTP_BAD_REQUEST ? LogStatusEnum.FAILURE : LogStatusEnum.SUCCESS);
-        if (StrUtil.isNotBlank(responseBody)) {
-            R result = JSONUtil.toBean(responseBody, R.class);
+        if (StrUtil.isNotBlank(persistedResponseBody)) {
+            R result = JSONUtil.toBean(persistedResponseBody, R.class);
             if (!result.isSuccess()) {
                 logDO.setStatus(LogStatusEnum.FAILURE);
-                logDO.setErrorMsg(result.getMsg());
+                logDO.setErrorMsg(sanitizer.sanitizeText(result.getMsg()));
             }
         }
     }

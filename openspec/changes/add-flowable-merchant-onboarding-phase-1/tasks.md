@@ -27,18 +27,27 @@
 
 - [x] 4.1 Replace repository/default production encryption keys and channel secrets with environment or approved secret-manager references and fail startup on placeholders
 - [x] 4.2 Implement encrypted identity, bank-account, and mobile value objects with key version, normalized keyed hash, and masked display value
-- [ ] 4.3 Implement server-side masking policies and privileged-reveal API with business-scope check, reason, step-up authentication, no-store headers, and immutable audit
-- [ ] 4.4 Configure KYC, password, channel, file, reveal, and export endpoints to exclude or sanitize request/response bodies before access-log persistence
-- [ ] 4.5 Implement the Flowable variable name/type allowlist and automated rejection tests for raw KYC objects, credentials, binary data, and attachment URLs
-- [ ] 4.6 Configure private KYC object storage, short-lived access, MIME/content checks, size/count limits, hashing, malware-scan port, and attachment-access audit
-- [ ] 4.7 Add automated scans proving complete synthetic identity, bank, mobile, and password values do not appear in Flowable variables, logs, errors, caches, or exports
+
+### Authorization Prerequisites for Privileged Reveal
+
+> Execution-order override: complete authoritative agent and merchant scope before exposing privileged reveal.
+
+- [x] 5.1 Implement agent hierarchy entities, closure/path maintenance, tenant ownership, lifecycle, repository, and descendant-scope authorization service
+- [x] 6.1 Implement merchant master, ownership, lifecycle, operator/reviewer identity mappings, repository, and agent-scope authorization
+
+- [x] 4.3 Implement server-side masking policies and privileged-reveal API with business-scope check, reason, step-up authentication, no-store headers, and immutable audit
+- [x] 4.4 Configure KYC, password, channel, file, reveal, and export endpoints to exclude or sanitize request/response bodies before access-log persistence
+- [x] 4.5 Implement the Flowable variable name/type allowlist and automated rejection tests for raw KYC objects, credentials, binary data, and attachment URLs
+- [x] 4.6 Configure private KYC object storage, short-lived access, MIME/content checks, size/count limits, hashing, malware-scan port, and attachment-access audit
+- [x] 4.7 Add automated scans proving complete synthetic identity, bank, mobile, and password values do not appear in Flowable variables, logs, errors, caches, or exports
 
 ## 5. Agent Management
 
-- [ ] 5.1 Implement agent hierarchy entities, closure/path maintenance, tenant ownership, lifecycle, repository, and descendant-scope authorization service
-- [ ] 5.2 Implement scoped agent list/detail APIs with combined filters, stable pagination, and sibling-agent enumeration tests
-- [ ] 5.3 Implement subordinate creation with generated login identity, server-resolved parent, validation, and atomic ContiNew user/role binding
-- [ ] 5.4 Implement allowed profile edits, self-disable prevention, subordinate enable/disable, session revocation, and password-reset audit
+> Task 5.1 is executed before task 4.3 as a security prerequisite; continue this capability with task 5.2.
+
+- [x] 5.2 Implement scoped agent list/detail APIs with combined filters, stable pagination, and sibling-agent enumeration tests
+- [x] 5.3 Implement subordinate creation with generated login identity, server-resolved parent, validation, and atomic ContiNew user/role binding
+- [x] 5.4 Implement allowed profile edits, self-disable prevention, subordinate enable/disable, session revocation, and password-reset audit
 - [ ] 5.5 Implement promotion code binding and active/disabled ownership validation without client-selectable agent reassignment
 - [ ] 5.6 Implement immutable agent pricing versions, parent-bound validation, effective time, uniqueness, and change audit
 - [ ] 5.7 Implement versioned merchant defaults and draft-time inheritance without rewriting existing merchant/onboarding history
@@ -46,7 +55,8 @@
 
 ## 6. Merchant Master
 
-- [ ] 6.1 Implement merchant master, ownership, lifecycle, operator/reviewer identity mappings, repository, and agent-scope authorization
+> Task 6.1 is executed before task 4.3 as a security prerequisite; continue this capability with task 6.2.
+
 - [ ] 6.2 Implement normalized legal-subject uniqueness with concurrent-create tests and deterministic duplicate response
 - [ ] 6.3 Implement scoped merchant search/detail APIs with channel/pricing summary and state/permission-derived actions
 - [ ] 6.4 Implement atomic merchant creation with distinct generated operator/reviewer identities and required field validation

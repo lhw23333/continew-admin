@@ -33,7 +33,8 @@ class MySqlApplicationIT extends AbstractApplicationIT {
 
     @Container
     @ServiceConnection
-    private static final MySQLContainer<?> DATABASE = new MySQLContainer<>("mysql:8.4.0");
+    private static final MySQLContainer<?> DATABASE = new MySQLContainer<>("mysql:8.4.0")
+        .withCommand("--log-bin-trust-function-creators=1");
 
     @Test
     void representativeQueriesUseCompositeIndexes() {
@@ -60,6 +61,36 @@ class MySqlApplicationIT extends AbstractApplicationIT {
             WHERE tenant_id = 18 AND channel_code = 'CH2' AND processing_status = 'FAILED'
             ORDER BY received_time DESC, id DESC LIMIT 20
             """);
+    }
+
+    @Test
+    void agentHierarchyUsesTenantBoundClosureScope() {
+        verifyAgentHierarchyScope();
+    }
+
+    @Test
+    void merchantScopeUsesAgentOwnership() {
+        verifyMerchantScopeUsesAgentOwnership();
+    }
+
+    @Test
+    void securityAuditIsAppendOnly() {
+        verifySecurityAuditIsAppendOnly();
+    }
+
+    @Test
+    void kycAttachmentMetadataPersistsWithTenantOwnership() {
+        verifyKycAttachmentMetadataPersistence();
+    }
+
+    @Test
+    void agentQueriesRejectSiblingEnumeration() {
+        verifyAgentScopedQueries();
+    }
+
+    @Test
+    void subordinateAgentProvisioningIsAtomic() {
+        verifySubordinateAgentProvisioningIsAtomic();
     }
 
     private void assertUsesIndex(String expectedIndex, String explainSql) {

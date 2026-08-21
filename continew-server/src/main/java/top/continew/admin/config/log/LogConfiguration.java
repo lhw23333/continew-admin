@@ -38,7 +38,10 @@ public class LogConfiguration {
      * 日志持久层接口本地实现类
      */
     @Bean
-    public LogDao logDao(UserService userService, LogMapper logMapper, TraceProperties traceProperties) {
-        return new LogDaoLocalImpl(userService, logMapper, traceProperties);
+    public LogDao logDao(UserService userService,
+                         LogMapper logMapper,
+                         TraceProperties traceProperties,
+                         SensitiveEndpointLogSanitizer sanitizer) {
+        return new LogDaoLocalImpl(userService, logMapper, traceProperties, sanitizer);
     }
 }

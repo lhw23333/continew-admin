@@ -55,3 +55,11 @@ sa-token:
 
 flowable:
   database-schema-update: true
+
+merchant:
+  security:
+    data-key-ref: env://merchant.test.data-key
+    hash-key-ref: env://merchant.test.hash-key
+  test:
+    data-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    hash-key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=

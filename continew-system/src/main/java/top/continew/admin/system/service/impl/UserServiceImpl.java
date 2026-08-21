@@ -421,6 +421,7 @@ public class UserServiceImpl extends BaseServiceImpl<UserMapper, UserDO, UserRes
         baseMapper.lambdaUpdate()
             .set(UserDO::getPassword, newPassword)
             .set(UserDO::getPwdResetTime, LocalDateTime.now())
+            .set(UserDO::getMustChangePassword, false)
             .eq(UserDO::getId, id)
             .update();
         // 保存历史密码

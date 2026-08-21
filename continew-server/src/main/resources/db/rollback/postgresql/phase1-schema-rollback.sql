@@ -1,4 +1,9 @@
 -- Phase-one schema rollback for empty test databases only. Never run for application rollback.
+DELETE FROM sys_user_role WHERE role_id IN (SELECT id FROM sys_role WHERE code = 'AGENT_ADMIN');
+DELETE FROM sys_role WHERE code = 'AGENT_ADMIN';
+ALTER TABLE sys_user DROP COLUMN IF EXISTS must_change_password;
+DROP TABLE IF EXISTS biz_security_audit CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_security_audit_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_channel_event CASCADE;
 DROP TABLE IF EXISTS biz_outbox_event CASCADE;
 DROP TABLE IF EXISTS biz_limit_adjustment CASCADE;

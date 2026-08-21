@@ -64,6 +64,36 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
             """);
     }
 
+    @Test
+    void agentHierarchyUsesTenantBoundClosureScope() {
+        verifyAgentHierarchyScope();
+    }
+
+    @Test
+    void merchantScopeUsesAgentOwnership() {
+        verifyMerchantScopeUsesAgentOwnership();
+    }
+
+    @Test
+    void securityAuditIsAppendOnly() {
+        verifySecurityAuditIsAppendOnly();
+    }
+
+    @Test
+    void kycAttachmentMetadataPersistsWithTenantOwnership() {
+        verifyKycAttachmentMetadataPersistence();
+    }
+
+    @Test
+    void agentQueriesRejectSiblingEnumeration() {
+        verifyAgentScopedQueries();
+    }
+
+    @Test
+    void subordinateAgentProvisioningIsAtomic() {
+        verifySubordinateAgentProvisioningIsAtomic();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

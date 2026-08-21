@@ -104,6 +104,9 @@ public class UserDO extends BaseDO {
      */
     private LocalDateTime pwdResetTime;
 
+    /** Whether the user must replace a temporary password before using business APIs. */
+    private Boolean mustChangePassword;
+
     /**
      * 部门 ID
      */
