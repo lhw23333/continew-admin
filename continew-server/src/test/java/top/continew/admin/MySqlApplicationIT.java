@@ -123,6 +123,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyMerchantScopedQueries();
     }
 
+    @Test
+    void onboardingChannelsRespectAgentProductsMerchantTypeAndChannelStatus() {
+        verifyChannelEligibility();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

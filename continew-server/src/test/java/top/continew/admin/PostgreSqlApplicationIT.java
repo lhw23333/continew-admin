@@ -129,6 +129,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyMerchantScopedQueries();
     }
 
+    @Test
+    void onboardingChannelsRespectAgentProductsMerchantTypeAndChannelStatus() {
+        verifyChannelEligibility();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

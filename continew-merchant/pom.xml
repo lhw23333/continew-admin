@@ -21,6 +21,10 @@
             <artifactId>continew-common</artifactId>
         </dependency>
         <dependency>
+            <groupId>top.continew.admin</groupId>
+            <artifactId>continew-channel</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>

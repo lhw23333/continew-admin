@@ -76,6 +76,8 @@ import top.continew.admin.merchant.master.domain.MerchantDomainException;
 import top.continew.admin.merchant.master.domain.MerchantRegistration;
 import top.continew.admin.merchant.master.domain.MerchantStatus;
 import top.continew.admin.merchant.master.domain.MerchantType;
+import top.continew.admin.merchant.onboarding.application.ChannelEligibilityService;
+import top.continew.admin.merchant.onboarding.application.EligibleChannel;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentRepository;
@@ -186,6 +188,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private MerchantReverificationRoutingService merchantReverificationRoutingService;
+
+    @Autowired
+    private ChannelEligibilityService channelEligibilityService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -987,8 +992,8 @@ abstract class AbstractApplicationIT {
 
             assertMerchantUser(result.operatorUserId(), parentDeptId, "OperatorPass915!", "MERCHANT_OPERATOR");
             assertMerchantUser(result.reviewerUserId(), parentDeptId, "ReviewerPass915!", "MERCHANT_REVIEWER");
-            org.junit.jupiter.api.Assertions.assertEquals(8, countMerchantManagementMenus("AGENT_ADMIN"));
-            org.junit.jupiter.api.Assertions.assertEquals(5, countMerchantManagementMenus("MERCHANT_OPERATOR"));
+            org.junit.jupiter.api.Assertions.assertEquals(9, countMerchantManagementMenus("AGENT_ADMIN"));
+            org.junit.jupiter.api.Assertions.assertEquals(6, countMerchantManagementMenus("MERCHANT_OPERATOR"));
             org.junit.jupiter.api.Assertions.assertEquals(4, countMerchantManagementMenus("MERCHANT_REVIEWER"));
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM biz_security_audit
@@ -1188,12 +1193,119 @@ abstract class AbstractApplicationIT {
         });
     }
 
+    protected void verifyChannelEligibility() {
+        long tenantId = 918L;
+        long rootAgentId = 91801L;
+        long merchantAgentId = 91802L;
+        long siblingAgentId = 91803L;
+        long rootUserId = 91811L;
+        long merchantAgentUserId = 91812L;
+        long siblingUserId = 91813L;
+        long merchantId = 918101L;
+        long operatorUserId = 918201L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "ELIGIBILITY-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "ELIGIBILITY-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingUserId, "ELIGIBILITY-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, operatorUserId, 918202L, "ELIGIBLE-MERCHANT", "e"
+                    .repeat(64)));
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 8, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 918501L, 1, "CHANNEL-A", "PRODUCT-A", "0.01000000", baseTime);
+            insertPricingVersion(tenantId, merchantAgentId, 918502L, 1, "CHANNEL-B", "PRODUCT-B", "0.02000000", baseTime);
+            insertPricingVersion(tenantId, merchantAgentId, 918503L, 1, "CHANNEL-C", "PRODUCT-C", "0.03000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 918401L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-A","productCode":"PRODUCT-A","pricingVersionId":918501},
+                  {"channelCode":"CHANNEL-B","productCode":"PRODUCT-B","pricingVersionId":918502},
+                  {"channelCode":"CHANNEL-C","productCode":"PRODUCT-C","pricingVersionId":918503}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+
+            insertChannelProductVersion(918601L, tenantId, "CHANNEL-A", "PRODUCT-A", "CFG-A-1", "REQ-A-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            insertChannelProductVersion(918602L, tenantId, "CHANNEL-B", "PRODUCT-B", "CFG-B-1", "REQ-B-1", "[\"INDIVIDUAL\"]", "ENABLED", baseTime);
+            insertChannelProductVersion(918603L, tenantId, "CHANNEL-C", "PRODUCT-C", "CFG-C-1", "REQ-C-1", "[\"ENTERPRISE\"]", "DISABLED", baseTime);
+            insertChannelProductVersion(919601L, 919L, "CHANNEL-A", "PRODUCT-A", "OTHER-TENANT", "REQ-OTHER", "[\"ENTERPRISE\"]", "DISABLED", baseTime
+                .plusHours(4));
+
+            List<EligibleChannel> eligible = channelEligibilityService.list(tenantId, merchantAgentUserId, merchantId);
+            org.junit.jupiter.api.Assertions.assertEquals(1, eligible.size());
+            EligibleChannel channel = eligible.get(0);
+            org.junit.jupiter.api.Assertions.assertEquals("CHANNEL-A", channel.channelCode());
+            org.junit.jupiter.api.Assertions.assertEquals("PRODUCT-A", channel.productCode());
+            org.junit.jupiter.api.Assertions.assertEquals("CFG-A-1", channel.channelConfigVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-A-1", channel.requirementVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(918501L, channel.pricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(918401L, channel.merchantDefaultVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(List
+                .of("BUSINESS_LICENSE", "LEGAL_REPRESENTATIVE_ID_FRONT"), channel.requirements()
+                    .requiredEvidenceTypes());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-A-1", channelEligibilityService
+                .list(tenantId, operatorUserId, merchantId)
+                .get(0)
+                .requirementVersion());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> channelEligibilityService
+                    .list(tenantId, siblingUserId, merchantId));
+
+            insertChannelProductVersion(918604L, tenantId, "CHANNEL-A", "PRODUCT-A", "CFG-A-2", "REQ-A-2", "[\"ENTERPRISE\"]", "DISABLED", baseTime
+                .plusHours(1));
+            org.junit.jupiter.api.Assertions.assertTrue(channelEligibilityService
+                .list(tenantId, merchantAgentUserId, merchantId)
+                .isEmpty());
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_channel_product_version SET status = 'ENABLED' WHERE id = ?
+                """, 918604L));
+
+            insertChannelProductVersion(918605L, tenantId, "CHANNEL-A", "PRODUCT-A", "CFG-A-3", "REQ-A-3", "[\"ENTERPRISE\"]", "ENABLED", baseTime
+                .plusHours(2));
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-A-3", channelEligibilityService
+                .list(tenantId, merchantAgentUserId, merchantId)
+                .get(0)
+                .requirementVersion());
+            merchantMasterService
+                .changeLifecycle(tenantId, rootUserId, merchantId, MerchantStatus.DISABLED, "eligibility disabled", 0L);
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> channelEligibilityService
+                .list(tenantId, merchantAgentUserId, merchantId));
+        });
+    }
+
     private void insertQueryUser(Long tenantId, Long userId, String username) {
         jdbcTemplate.update("""
             INSERT INTO sys_user
             (id, username, nickname, gender, status, is_system, dept_id, create_user, create_time, deleted, tenant_id)
             VALUES (?, ?, ?, 0, 1, ?, 1, 1, ?, 0, ?)
             """, userId, username, username, false, LocalDateTime.of(2026, 8, 21, 9, 0), tenantId);
+    }
+
+    private void insertChannelProductVersion(Long id,
+                                             Long tenantId,
+                                             String channelCode,
+                                             String productCode,
+                                             String configVersion,
+                                             String requirementVersion,
+                                             String merchantTypesJson,
+                                             String status,
+                                             LocalDateTime effectiveTime) {
+        jdbcTemplate.update("""
+            INSERT INTO biz_channel_product_version
+            (id, tenant_id, channel_code, product_code, config_version, requirement_version,
+             supported_merchant_types_json, requirement_summary_json, status, effective_time,
+             create_user, create_time, deleted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0)
+            """, id, tenantId, channelCode, productCode, configVersion, requirementVersion, merchantTypesJson, """
+            {"requiredEvidenceTypes":["BUSINESS_LICENSE","LEGAL_REPRESENTATIVE_ID_FRONT"],
+             "optionalEvidenceTypes":["SUPPLEMENT"],"maxSupplementAttachments":5}
+            """, status, effectiveTime, effectiveTime);
     }
 
     private void insertPricingVersion(Long tenantId,
@@ -1277,7 +1389,8 @@ abstract class AbstractApplicationIT {
             WHERE role_data.code = ?
               AND role_menu.menu_id IN (
                 690000000000100000, 690000000000100200, 690000000000100201, 690000000000100202,
-                690000000000100203, 690000000000100204, 690000000000100205, 690000000000100206
+                690000000000100203, 690000000000100204, 690000000000100205, 690000000000100206,
+                690000000000100207
               )
             """, Integer.class, roleCode);
     }
