@@ -19,6 +19,7 @@ package top.continew.admin.merchant.master.application;
 import top.continew.admin.merchant.master.domain.Merchant;
 
 import java.util.Optional;
+import java.util.List;
 
 /** Tenant-explicit merchant master persistence port. */
 public interface MerchantRepository {
@@ -28,6 +29,15 @@ public interface MerchantRepository {
     boolean existsById(Long tenantId, Long merchantId);
 
     boolean existsByLegalSubjectHash(Long tenantId, String legalSubjectHash);
+
+    MerchantQuerySlice page(Long tenantId, Long actorUserId, List<Long> authorizedAgentIds, MerchantListQuery query);
+
+    Optional<MerchantQueryRecord> findScopedById(Long tenantId,
+                                                 Long actorUserId,
+                                                 List<Long> authorizedAgentIds,
+                                                 Long merchantId);
+
+    List<MerchantChannelSummary> listLatestChannelSummaries(Long tenantId, List<Long> merchantIds);
 
     void insert(Merchant merchant);
 

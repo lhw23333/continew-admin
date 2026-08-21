@@ -118,6 +118,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyMerchantProvisioningIsAtomic();
     }
 
+    @Test
+    void merchantQueriesAreScopedAndChannelIndependent() {
+        verifyMerchantScopedQueries();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

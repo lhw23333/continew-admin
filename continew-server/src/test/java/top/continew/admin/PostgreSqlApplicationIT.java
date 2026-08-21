@@ -124,6 +124,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyMerchantProvisioningIsAtomic();
     }
 
+    @Test
+    void merchantQueriesAreScopedAndChannelIndependent() {
+        verifyMerchantScopedQueries();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

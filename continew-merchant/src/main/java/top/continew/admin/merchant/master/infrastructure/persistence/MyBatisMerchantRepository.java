@@ -16,15 +16,26 @@
 
 package top.continew.admin.merchant.master.infrastructure.persistence;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
+import top.continew.admin.merchant.agent.domain.AgentPricingRules;
+import top.continew.admin.merchant.master.application.MerchantChannelSummary;
+import top.continew.admin.merchant.master.application.MerchantListQuery;
+import top.continew.admin.merchant.master.application.MerchantPricingSummary;
+import top.continew.admin.merchant.master.application.MerchantQueryRecord;
+import top.continew.admin.merchant.master.application.MerchantQuerySlice;
 import top.continew.admin.merchant.master.application.MerchantRepository;
 import top.continew.admin.merchant.master.domain.Merchant;
 import top.continew.admin.merchant.master.domain.MerchantDomainException;
 import top.continew.admin.merchant.master.domain.MerchantDuplicateLegalSubjectException;
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 
+import java.util.List;
 import java.util.Optional;
 
 /** MyBatis merchant repository with mandatory tenant predicates. */
@@ -33,6 +44,7 @@ import java.util.Optional;
 public class MyBatisMerchantRepository implements MerchantRepository {
 
     private final MerchantMapper mapper;
+    private final ObjectMapper objectMapper;
 
     @Override
     public Optional<Merchant> findById(Long tenantId, Long merchantId) {
@@ -59,6 +71,34 @@ public class MyBatisMerchantRepository implements MerchantRepository {
             .eq(MerchantDO::getLegalSubjectHash, legalSubjectHash)
             .eq(MerchantDO::getDeleted, 0L)
             .exists();
+    }
+
+    @Override
+    public MerchantQuerySlice page(Long tenantId,
+                                   Long actorUserId,
+                                   List<Long> authorizedAgentIds,
+                                   MerchantListQuery query) {
+        IPage<MerchantQueryRow> result = mapper.selectScopedPage(new Page<>(query.page(), query
+            .size()), tenantId, actorUserId, authorizedAgentIds, query);
+        return new MerchantQuerySlice(result.getRecords().stream().map(this::toQueryRecord).toList(), result
+            .getTotal());
+    }
+
+    @Override
+    public Optional<MerchantQueryRecord> findScopedById(Long tenantId,
+                                                        Long actorUserId,
+                                                        List<Long> authorizedAgentIds,
+                                                        Long merchantId) {
+        return Optional.ofNullable(mapper.selectScopedDetail(tenantId, actorUserId, authorizedAgentIds, merchantId))
+            .map(this::toQueryRecord);
+    }
+
+    @Override
+    public List<MerchantChannelSummary> listLatestChannelSummaries(Long tenantId, List<Long> merchantIds) {
+        if (merchantIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.selectLatestChannelSummaries(tenantId, merchantIds).stream().map(this::toChannelSummary).toList();
     }
 
     @Override
@@ -123,6 +163,40 @@ public class MyBatisMerchantRepository implements MerchantRepository {
             .set(MerchantDO::getReviewerMobileHashKeyVersion, mobile.hashKeyVersion())
             .set(MerchantDO::getReviewerMobileMasked, mobile.maskedValue())
             .set(MerchantDO::getReviewerMobileKeyVersion, mobile.keyVersion());
+    }
+
+    private MerchantQueryRecord toQueryRecord(MerchantQueryRow row) {
+        return new MerchantQueryRecord(row.getId(), row.getOwningAgentId(), row.getMerchantNo(), row
+            .getMerchantType(), row.getLegalName(), row.getShortName(), row.getLegalRepresentativeName(), row
+                .getOperatorUserId(), row.getOperatorUsername(), row.getReviewerUserId(), row.getReviewerUsername(), row
+                    .getContactName(), row.getContactMobileMasked(), row.getReviewerMobileMasked(), row
+                        .getIndustry(), row.getProductDescription(), row.getStatus(), row.getDisabledReason(), row
+                            .getCertifiedKycVersionId(), row.getRowVersion(), row.getOwningAgentNo(), row
+                                .getOwningAgentName(), row.getCreateTime(), row.getUpdateTime());
+    }
+
+    private MerchantChannelSummary toChannelSummary(MerchantChannelQueryRow row) {
+        return new MerchantChannelSummary(row.getMerchantId(), row.getApplicationId(), row.getApplicationNo(), row
+            .getChannelCode(), row.getRequirementVersion(), row.getChannelConfigVersion(), row.getKycVersionId(), row
+                .getApplicationStatus(), row.getReportingStatus(), row.getAgreementStatus(), row
+                    .getCardBindingStatus(), row.getReserveAccountStatus(), row.getChannelFinalStatus(), row
+                        .getRawChannelStatus(), toPricingSummary(row), row.getSubmittedTime(), row
+                            .getCompletedTime(), row.getCreateTime());
+    }
+
+    private MerchantPricingSummary toPricingSummary(MerchantChannelQueryRow row) {
+        if (row.getPricingVersionId() == null) {
+            return null;
+        }
+        try {
+            AgentPricingRules rules = objectMapper.readValue(row.getPricingRulesJson(), AgentPricingRules.class);
+            return new MerchantPricingSummary(row.getPricingVersionId(), row.getPricingAgentId(), row
+                .getParentPricingVersionId(), row.getPricingVersionNo(), row.getPricingChannelCode(), row
+                    .getPricingProductCode(), row.getPricingCurrency(), rules, row.getPricingEffectiveTime(), row
+                        .getPricingExpiresTime(), row.getPricingStatus());
+        } catch (JsonProcessingException | IllegalArgumentException ex) {
+            throw new MerchantDomainException("Stored merchant pricing summary is invalid");
+        }
     }
 
     private Merchant toDomain(MerchantDO dataObject) {

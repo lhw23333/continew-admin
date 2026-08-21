@@ -208,6 +208,28 @@ class PrivilegedRevealServiceTest {
         }
 
         @Override
+        public top.continew.admin.merchant.master.application.MerchantQuerySlice page(Long tenantId,
+                                                                                      Long actorUserId,
+                                                                                      List<Long> authorizedAgentIds,
+                                                                                      top.continew.admin.merchant.master.application.MerchantListQuery query) {
+            return new top.continew.admin.merchant.master.application.MerchantQuerySlice(List.of(), 0L);
+        }
+
+        @Override
+        public Optional<top.continew.admin.merchant.master.application.MerchantQueryRecord> findScopedById(Long tenantId,
+                                                                                                           Long actorUserId,
+                                                                                                           List<Long> authorizedAgentIds,
+                                                                                                           Long merchantId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<top.continew.admin.merchant.master.application.MerchantChannelSummary> listLatestChannelSummaries(Long tenantId,
+                                                                                                                      List<Long> merchantIds) {
+            return List.of();
+        }
+
+        @Override
         public void insert(Merchant merchant) {
             merchants.put(merchant.id(), merchant);
         }

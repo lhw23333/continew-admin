@@ -61,7 +61,7 @@
 > `6.4 → 6.5 → 6.6 → 6.3`, then return to the scoped summary API after the channel-state boundary is available.
 
 - [x] 6.2 Implement normalized legal-subject uniqueness with concurrent-create tests and deterministic duplicate response
-- [ ] 6.3 Implement scoped merchant search/detail APIs with channel/pricing summary and state/permission-derived actions
+- [x] 6.3 Implement scoped merchant search/detail APIs with channel/pricing summary and state/permission-derived actions
 - [x] 6.4 Implement atomic merchant creation with distinct generated operator/reviewer identities and required field validation
 - [x] 6.5 Implement ordinary profile edit rules and controlled re-verification routing for certified identity, ownership, and settlement-account changes
 - [x] 6.6 Implement merchant enable/disable with reason, downstream-operation policy, session impact, and immutable audit

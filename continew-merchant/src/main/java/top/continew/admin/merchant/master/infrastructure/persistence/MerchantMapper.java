@@ -16,10 +16,30 @@
 
 package top.continew.admin.merchant.master.infrastructure.persistence;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import top.continew.admin.merchant.master.application.MerchantListQuery;
 import top.continew.starter.data.mapper.BaseMapper;
+
+import java.util.List;
 
 /** Merchant master mapper. */
 @Mapper
 public interface MerchantMapper extends BaseMapper<MerchantDO> {
+
+    IPage<MerchantQueryRow> selectScopedPage(@Param("page") Page<MerchantQueryRow> page,
+                                             @Param("tenantId") Long tenantId,
+                                             @Param("actorUserId") Long actorUserId,
+                                             @Param("authorizedAgentIds") List<Long> authorizedAgentIds,
+                                             @Param("query") MerchantListQuery query);
+
+    MerchantQueryRow selectScopedDetail(@Param("tenantId") Long tenantId,
+                                        @Param("actorUserId") Long actorUserId,
+                                        @Param("authorizedAgentIds") List<Long> authorizedAgentIds,
+                                        @Param("merchantId") Long merchantId);
+
+    List<MerchantChannelQueryRow> selectLatestChannelSummaries(@Param("tenantId") Long tenantId,
+                                                               @Param("merchantIds") List<Long> merchantIds);
 }

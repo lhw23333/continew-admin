@@ -56,9 +56,16 @@ import top.continew.admin.merchant.agent.domain.AgentRegistration;
 import top.continew.admin.merchant.agent.domain.AgentStatus;
 import top.continew.admin.merchant.agent.domain.KycDraftDefaultSnapshot;
 import top.continew.admin.merchant.agent.domain.PromotionOwnershipDeniedException;
+import top.continew.admin.merchant.master.application.MerchantAction;
+import top.continew.admin.merchant.master.application.MerchantActionPermissions;
+import top.continew.admin.merchant.master.application.MerchantChannelSummary;
+import top.continew.admin.merchant.master.application.MerchantDetail;
+import top.continew.admin.merchant.master.application.MerchantListQuery;
 import top.continew.admin.merchant.master.application.MerchantMasterService;
 import top.continew.admin.merchant.master.application.MerchantOperationPolicyService;
 import top.continew.admin.merchant.master.application.MerchantOperationPolicyService.MerchantOperation;
+import top.continew.admin.merchant.master.application.MerchantPage;
+import top.continew.admin.merchant.master.application.MerchantQueryService;
 import top.continew.admin.merchant.master.application.MerchantRepository;
 import top.continew.admin.merchant.master.application.MerchantScopeAuthorizationService;
 import top.continew.admin.merchant.master.domain.Merchant;
@@ -98,6 +105,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -142,6 +150,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private MerchantScopeAuthorizationService merchantScopeAuthorizationService;
+
+    @Autowired
+    private MerchantQueryService merchantQueryService;
 
     @Autowired
     private MerchantRepository merchantRepository;
@@ -1034,6 +1045,206 @@ abstract class AbstractApplicationIT {
                 SELECT COUNT(*) FROM biz_merchant WHERE tenant_id = ? AND deleted = 0
                 """, Integer.class, tenantId));
         });
+    }
+
+    protected void verifyMerchantScopedQueries() {
+        long tenantId = 917L;
+        long rootAgentId = 91701L;
+        long childAgentId = 91702L;
+        long siblingAgentId = 91703L;
+        long grandchildAgentId = 91704L;
+        long rootUserId = 91711L;
+        long childUserId = 91712L;
+        long rootMerchantId = 917101L;
+        long childMerchantId = 917102L;
+        long siblingMerchantId = 917103L;
+        long grandchildMerchantId = 917104L;
+        MerchantActionPermissions permissions = MerchantActionPermissions.all();
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "MER-QUERY-ROOT"));
+            agentHierarchyService
+                .register(registration(childAgentId, tenantId, rootAgentId, childUserId, "MER-QUERY-CHILD"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, 91713L, "MER-QUERY-SIBLING"));
+            agentHierarchyService
+                .register(registration(grandchildAgentId, tenantId, childAgentId, 91714L, "MER-QUERY-GRANDCHILD"));
+
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(rootMerchantId, tenantId, rootAgentId, 917201L, 917202L, "MER-ROOT", "1"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(childMerchantId, tenantId, childAgentId, 917203L, 917204L, "MER-CHILD", "2"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(siblingMerchantId, tenantId, siblingAgentId, 917205L, 917206L, "MER-SIBLING", "3"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(grandchildMerchantId, tenantId, grandchildAgentId, 917207L, 917208L, "MER-GRANDCHILD", "4"
+                    .repeat(64)));
+            merchantMasterService
+                .changeLifecycle(tenantId, rootUserId, childMerchantId, MerchantStatus.ENABLED, "query fixture enabled", 0L);
+            merchantMasterService
+                .changeLifecycle(tenantId, rootUserId, siblingMerchantId, MerchantStatus.ENABLED, "query fixture enabled", 0L);
+            merchantMasterService
+                .changeLifecycle(tenantId, rootUserId, grandchildMerchantId, MerchantStatus.DISABLED, "query fixture disabled", 0L);
+
+            insertQueryUser(tenantId, 917201L, "merchant_root_operator");
+            insertQueryUser(tenantId, 917202L, "merchant_root_reviewer");
+            insertQueryUser(tenantId, 917203L, "merchant_child_operator");
+            insertQueryUser(tenantId, 917204L, "merchant_child_reviewer");
+            insertQueryUser(tenantId, 917205L, "merchant_sibling_operator");
+            insertQueryUser(tenantId, 917206L, "merchant_sibling_reviewer");
+            insertQueryUser(tenantId, 917207L, "merchant_grandchild_operator");
+            insertQueryUser(tenantId, 917208L, "merchant_grandchild_reviewer");
+            jdbcTemplate
+                .update("UPDATE biz_merchant SET legal_representative_name = ? WHERE tenant_id = ? AND id = ?", "Alice Child", tenantId, childMerchantId);
+            jdbcTemplate
+                .update("UPDATE biz_merchant SET legal_representative_name = ? WHERE tenant_id = ? AND id = ?", "Bob Sibling", tenantId, siblingMerchantId);
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 21, 10, 0);
+            insertPricingVersion(tenantId, childAgentId, 917501L, 1, "CHANNEL-A", "PRODUCT-A", "0.01000000", baseTime);
+            insertPricingVersion(tenantId, childAgentId, 917502L, 2, "CHANNEL-A", "PRODUCT-A", "0.02000000", baseTime
+                .plusMinutes(30));
+            insertPricingVersion(tenantId, childAgentId, 917503L, 1, "CHANNEL-B", "PRODUCT-B", "0.03000000", baseTime
+                .plusMinutes(45));
+            insertQueryKycVersion(tenantId, childMerchantId, 917401L, 1, 917501L, baseTime);
+            insertQueryKycVersion(tenantId, childMerchantId, 917402L, 2, 917502L, baseTime.plusHours(1));
+            insertQueryKycVersion(tenantId, childMerchantId, 917403L, 3, 917503L, baseTime.plusHours(2));
+            insertQueryApplication(tenantId, childMerchantId, childAgentId, 917601L, "APP-OLD-A", "CHANNEL-A", 917401L, "FAILED", "FAILED", baseTime);
+            insertQueryApplication(tenantId, childMerchantId, childAgentId, 917602L, "APP-LATEST-A", "CHANNEL-A", 917402L, "SUCCEEDED", "SUCCEEDED", baseTime
+                .plusHours(1));
+            insertQueryApplication(tenantId, childMerchantId, childAgentId, 917603L, "APP-LATEST-B", "CHANNEL-B", 917403L, "UNDER_REVIEW", "PROCESSING", baseTime
+                .plusHours(2));
+            insertQueryApplication(tenantId, grandchildMerchantId, grandchildAgentId, 917604L, "APP-GRANDCHILD", "CHANNEL-A", null, "SUCCEEDED", "SUCCEEDED", baseTime
+                .plusHours(3));
+
+            MerchantListQuery allQuery = new MerchantListQuery(null, "MER-", null, null, null, null, null, null, null, null, null, null, null, 1, 2, "127.0.0.1");
+            MerchantPage first = merchantQueryService.page(tenantId, rootUserId, allQuery, permissions);
+            MerchantPage repeated = merchantQueryService.page(tenantId, rootUserId, allQuery, permissions);
+            org.junit.jupiter.api.Assertions.assertEquals(4L, first.total());
+            org.junit.jupiter.api.Assertions.assertEquals(first.list()
+                .stream()
+                .map(item -> item.id())
+                .toList(), repeated.list().stream().map(item -> item.id()).toList());
+
+            MerchantPage childScope = merchantQueryService
+                .page(tenantId, childUserId, new MerchantListQuery(null, null, null, null, null, null, null, null, null, null, null, null, null, 1, 20, "127.0.0.1"), permissions);
+            org.junit.jupiter.api.Assertions.assertEquals(Set.of(childMerchantId, grandchildMerchantId), childScope
+                .list()
+                .stream()
+                .map(item -> item.id())
+                .collect(java.util.stream.Collectors.toSet()));
+            org.junit.jupiter.api.Assertions.assertEquals(2L, childScope.total());
+
+            MerchantPage directIdentity = merchantQueryService
+                .page(tenantId, 917203L, new MerchantListQuery(null, null, "merchant_child_operator", null, null, null, null, null, null, null, null, null, null, 1, 20, "127.0.0.1"), permissions);
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(childMerchantId), directIdentity.list()
+                .stream()
+                .map(item -> item.id())
+                .toList());
+
+            MerchantPage combined = merchantQueryService
+                .page(tenantId, rootUserId, new MerchantListQuery(null, null, null, "Legal MER-CHILD", null, "Contact", "Alice", MerchantType.ENTERPRISE, childAgentId, "CHANNEL-A", MerchantStatus.ENABLED, null, null, 1, 20, "127.0.0.1"), permissions);
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(childMerchantId), combined.list()
+                .stream()
+                .map(item -> item.id())
+                .toList());
+
+            MerchantDetail childDetail = merchantQueryService
+                .get(tenantId, rootUserId, childMerchantId, permissions, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(MerchantStatus.ENABLED, childDetail.status());
+            org.junit.jupiter.api.Assertions.assertEquals(2, childDetail.channels().size());
+            MerchantChannelSummary channelA = childDetail.channels()
+                .stream()
+                .filter(channel -> "CHANNEL-A".equals(channel.channelCode()))
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(917602L, channelA.applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals(917502L, channelA.pricing().pricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(2, channelA.pricing().versionNo());
+            org.junit.jupiter.api.Assertions.assertTrue(childDetail.actions().contains(MerchantAction.ADJUST_LIMIT));
+            MerchantActionPermissions viewOnly = new MerchantActionPermissions(true, false, false, false, false, false, false);
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(MerchantAction.VIEW), merchantQueryService
+                .get(tenantId, rootUserId, childMerchantId, viewOnly, "127.0.0.1")
+                .actions());
+
+            MerchantDetail disabled = merchantQueryService
+                .get(tenantId, rootUserId, grandchildMerchantId, permissions, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertFalse(disabled.actions().contains(MerchantAction.START_ONBOARDING));
+            org.junit.jupiter.api.Assertions.assertFalse(disabled.actions().contains(MerchantAction.ADJUST_LIMIT));
+            org.junit.jupiter.api.Assertions.assertTrue(disabled.actions().contains(MerchantAction.VIEW_LIMIT_HISTORY));
+
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> merchantQueryService
+                    .get(tenantId, childUserId, siblingMerchantId, permissions, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND actor_user_id = ? AND object_id = ? AND action = 'MERCHANT_READ_DENIED'
+                """, Integer.class, tenantId, childUserId, siblingMerchantId));
+        });
+    }
+
+    private void insertQueryUser(Long tenantId, Long userId, String username) {
+        jdbcTemplate.update("""
+            INSERT INTO sys_user
+            (id, username, nickname, gender, status, is_system, dept_id, create_user, create_time, deleted, tenant_id)
+            VALUES (?, ?, ?, 0, 1, ?, 1, 1, ?, 0, ?)
+            """, userId, username, username, false, LocalDateTime.of(2026, 8, 21, 9, 0), tenantId);
+    }
+
+    private void insertPricingVersion(Long tenantId,
+                                      Long agentId,
+                                      Long pricingVersionId,
+                                      Integer versionNo,
+                                      String channelCode,
+                                      String productCode,
+                                      String percentageCost,
+                                      LocalDateTime effectiveTime) {
+        String rules = "{\"percentageCost\":" + percentageCost + ",\"fixedFee\":1.00,\"profitShareRatio\":0.50000000}";
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_agent_pricing_version
+                (id, tenant_id, agent_id, version_no, channel_code, product_code, currency, pricing_rules_json,
+                 effective_time, status, create_user, create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, 'CNY', ?, ?, 'PUBLISHED', 1, ?, 0)
+                """, pricingVersionId, tenantId, agentId, versionNo, channelCode, productCode, rules, effectiveTime, effectiveTime);
+    }
+
+    private void insertQueryKycVersion(Long tenantId,
+                                       Long merchantId,
+                                       Long kycVersionId,
+                                       Integer versionNo,
+                                       Long pricingVersionId,
+                                       LocalDateTime createTime) {
+        jdbcTemplate.update("""
+            INSERT INTO biz_kyc_version
+            (id, tenant_id, merchant_id, version_no, requirement_version, status, saved_step, legal_name,
+             pricing_version_id, row_version, create_time, deleted)
+            VALUES (?, ?, ?, ?, 'REQ-QUERY-1', 'SUBMITTED', 5, 'Query Legal Subject', ?, 0, ?, 0)
+            """, kycVersionId, tenantId, merchantId, versionNo, pricingVersionId, createTime);
+    }
+
+    private void insertQueryApplication(Long tenantId,
+                                        Long merchantId,
+                                        Long owningAgentId,
+                                        Long applicationId,
+                                        String applicationNo,
+                                        String channelCode,
+                                        Long kycVersionId,
+                                        String status,
+                                        String channelFinalStatus,
+                                        LocalDateTime createTime) {
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_onboarding_application
+                (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, requirement_version,
+                 kyc_version_id, status, reporting_status, agreement_status, card_binding_status,
+                 reserve_account_status, channel_final_status, raw_channel_status, submitted_time, row_version,
+                 create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, 'REQ-QUERY-1', ?, ?, 'SUCCEEDED', 'SUCCEEDED', 'SUCCEEDED',
+                        'SUCCEEDED', ?, ?, ?, 0, ?, 0)
+                """, applicationId, tenantId, applicationNo, merchantId, owningAgentId, channelCode, kycVersionId, status, channelFinalStatus, "RAW-" + channelFinalStatus, createTime, createTime);
     }
 
     private void assertMerchantUser(Long userId, Long deptId, String password, String roleCode) {

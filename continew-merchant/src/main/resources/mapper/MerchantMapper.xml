@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="top.continew.admin.merchant.master.infrastructure.persistence.MerchantMapper">
+    <sql id="merchantQueryColumns">
+        merchant.id,
+        merchant.owning_agent_id,
+        merchant.merchant_no,
+        merchant.merchant_type,
+        merchant.legal_name,
+        merchant.short_name,
+        merchant.legal_representative_name,
+        merchant.operator_user_id,
+        operator_user.username AS operator_username,
+        merchant.reviewer_user_id,
+        reviewer_user.username AS reviewer_username,
+        merchant.contact_name,
+        merchant.contact_mobile_masked,
+        merchant.reviewer_mobile_masked,
+        merchant.industry,
+        merchant.product_description,
+        merchant.status,
+        merchant.disabled_reason,
+        merchant.certified_kyc_version_id,
+        merchant.row_version,
+        owning_agent.agent_no AS owning_agent_no,
+        owning_agent.name AS owning_agent_name,
+        merchant.create_time,
+        merchant.update_time
+    </sql>
+
+    <sql id="merchantQueryFrom">
+        FROM biz_merchant merchant
+        LEFT JOIN sys_user operator_user
+          ON operator_user.id = merchant.operator_user_id AND operator_user.deleted = 0
+        LEFT JOIN sys_user reviewer_user
+          ON reviewer_user.id = merchant.reviewer_user_id AND reviewer_user.deleted = 0
+        LEFT JOIN biz_agent owning_agent
+          ON owning_agent.id = merchant.owning_agent_id
+         AND owning_agent.tenant_id = merchant.tenant_id
+         AND owning_agent.deleted = 0
+    </sql>
+
+    <sql id="merchantScope">
+        AND (
+            merchant.operator_user_id = #{actorUserId}
+            OR merchant.reviewer_user_id = #{actorUserId}
+            <if test="authorizedAgentIds != null and authorizedAgentIds.size() > 0">
+                OR merchant.owning_agent_id IN
+                <foreach collection="authorizedAgentIds" item="agentId" open="(" separator="," close=")">
+                    #{agentId}
+                </foreach>
+            </if>
+        )
+    </sql>
+
+    <sql id="merchantFilters">
+        <if test="query.merchantId != null">
+            AND merchant.id = #{query.merchantId}
+        </if>
+        <if test="query.merchantNo != null">
+            AND merchant.merchant_no LIKE CONCAT('%', #{query.merchantNo}, '%')
+        </if>
+        <if test="query.loginAccount != null">
+            AND (operator_user.username LIKE CONCAT('%', #{query.loginAccount}, '%')
+                 OR reviewer_user.username LIKE CONCAT('%', #{query.loginAccount}, '%'))
+        </if>
+        <if test="query.legalName != null">
+            AND merchant.legal_name LIKE CONCAT('%', #{query.legalName}, '%')
+        </if>
+        <if test="query.shortName != null">
+            AND merchant.short_name LIKE CONCAT('%', #{query.shortName}, '%')
+        </if>
+        <if test="query.contact != null">
+            AND (merchant.contact_name LIKE CONCAT('%', #{query.contact}, '%')
+                 OR merchant.contact_mobile_masked LIKE CONCAT('%', #{query.contact}, '%'))
+        </if>
+        <if test="query.legalRepresentative != null">
+            AND merchant.legal_representative_name LIKE CONCAT('%', #{query.legalRepresentative}, '%')
+        </if>
+        <if test="query.merchantType != null">
+            AND merchant.merchant_type = #{query.merchantType}
+        </if>
+        <if test="query.owningAgentId != null">
+            AND merchant.owning_agent_id = #{query.owningAgentId}
+        </if>
+        <if test="query.channelCode != null">
+            AND EXISTS (
+                SELECT 1
+                FROM biz_onboarding_application channel_filter
+                WHERE channel_filter.tenant_id = merchant.tenant_id
+                  AND channel_filter.merchant_id = merchant.id
+                  AND channel_filter.channel_code = #{query.channelCode}
+                  AND channel_filter.deleted = 0
+            )
+        </if>
+        <if test="query.status != null">
+            AND merchant.status = #{query.status}
+        </if>
+        <if test="query.createdFrom != null">
+            AND merchant.create_time &gt;= #{query.createdFrom}
+        </if>
+        <if test="query.createdTo != null">
+            AND merchant.create_time &lt;= #{query.createdTo}
+        </if>
+    </sql>
+
+    <select id="selectScopedPage"
+            resultType="top.continew.admin.merchant.master.infrastructure.persistence.MerchantQueryRow">
+        SELECT <include refid="merchantQueryColumns" />
+        <include refid="merchantQueryFrom" />
+        WHERE merchant.tenant_id = #{tenantId}
+          AND merchant.deleted = 0
+        <include refid="merchantScope" />
+        <include refid="merchantFilters" />
+        ORDER BY merchant.create_time DESC, merchant.id DESC
+    </select>
+
+    <select id="selectScopedDetail"
+            resultType="top.continew.admin.merchant.master.infrastructure.persistence.MerchantQueryRow">
+        SELECT <include refid="merchantQueryColumns" />
+        <include refid="merchantQueryFrom" />
+        WHERE merchant.tenant_id = #{tenantId}
+          AND merchant.id = #{merchantId}
+          AND merchant.deleted = 0
+        <include refid="merchantScope" />
+    </select>
+
+    <select id="selectLatestChannelSummaries"
+            resultType="top.continew.admin.merchant.master.infrastructure.persistence.MerchantChannelQueryRow">
+        SELECT
+            application.merchant_id,
+            application.id AS application_id,
+            application.application_no,
+            application.channel_code,
+            application.requirement_version,
+            application.channel_config_version,
+            application.kyc_version_id,
+            application.status AS application_status,
+            application.reporting_status,
+            application.agreement_status,
+            application.card_binding_status,
+            application.reserve_account_status,
+            application.channel_final_status,
+            application.raw_channel_status,
+            application.submitted_time,
+            application.completed_time,
+            application.create_time,
+            pricing.id AS pricing_version_id,
+            pricing.agent_id AS pricing_agent_id,
+            pricing.parent_pricing_version_id,
+            pricing.version_no AS pricing_version_no,
+            pricing.channel_code AS pricing_channel_code,
+            pricing.product_code AS pricing_product_code,
+            pricing.currency AS pricing_currency,
+            pricing.pricing_rules_json,
+            pricing.effective_time AS pricing_effective_time,
+            pricing.expires_time AS pricing_expires_time,
+            pricing.status AS pricing_status
+        FROM biz_onboarding_application application
+        LEFT JOIN biz_kyc_version kyc
+          ON kyc.id = application.kyc_version_id
+         AND kyc.tenant_id = application.tenant_id
+         AND kyc.merchant_id = application.merchant_id
+         AND kyc.deleted = 0
+        LEFT JOIN biz_agent_pricing_version pricing
+          ON pricing.id = kyc.pricing_version_id
+         AND pricing.tenant_id = application.tenant_id
+         AND pricing.deleted = 0
+        WHERE application.tenant_id = #{tenantId}
+          AND application.deleted = 0
+          AND application.merchant_id IN
+          <foreach collection="merchantIds" item="merchantId" open="(" separator="," close=")">
+              #{merchantId}
+          </foreach>
+          AND NOT EXISTS (
+              SELECT 1
+              FROM biz_onboarding_application newer
+              WHERE newer.tenant_id = application.tenant_id
+                AND newer.merchant_id = application.merchant_id
+                AND newer.channel_code = application.channel_code
+                AND newer.deleted = 0
+                AND (newer.create_time &gt; application.create_time
+                     OR (newer.create_time = application.create_time AND newer.id &gt; application.id))
+          )
+        ORDER BY application.merchant_id, application.channel_code
+    </select>
+</mapper>
