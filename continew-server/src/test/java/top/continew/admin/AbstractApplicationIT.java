@@ -78,6 +78,9 @@ import top.continew.admin.merchant.master.domain.MerchantStatus;
 import top.continew.admin.merchant.master.domain.MerchantType;
 import top.continew.admin.merchant.onboarding.application.ChannelEligibilityService;
 import top.continew.admin.merchant.onboarding.application.EligibleChannel;
+import top.continew.admin.merchant.onboarding.application.OnboardingDraftConflictException;
+import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
+import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentRepository;
@@ -191,6 +194,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelEligibilityService channelEligibilityService;
+
+    @Autowired
+    private OnboardingDraftService onboardingDraftService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -1276,6 +1282,117 @@ abstract class AbstractApplicationIT {
                 .changeLifecycle(tenantId, rootUserId, merchantId, MerchantStatus.DISABLED, "eligibility disabled", 0L);
             org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> channelEligibilityService
                 .list(tenantId, merchantAgentUserId, merchantId));
+        });
+    }
+
+    protected void verifyOnboardingDraftPersistence() {
+        long tenantId = 920L;
+        long rootAgentId = 92001L;
+        long merchantAgentId = 92002L;
+        long siblingAgentId = 92003L;
+        long rootUserId = 92011L;
+        long merchantAgentUserId = 92012L;
+        long siblingUserId = 92013L;
+        long merchantId = 920101L;
+        long operatorUserId = 920201L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "DRAFT-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "DRAFT-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingUserId, "DRAFT-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, operatorUserId, 920202L, "DRAFT-MERCHANT", "f"
+                    .repeat(64)));
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 9, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 920501L, 1, "CHANNEL-D", "PRODUCT-D", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 920401L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-D","productCode":"PRODUCT-D","pricingVersionId":920501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(920601L, tenantId, "CHANNEL-D", "PRODUCT-D", "CFG-D-1", "REQ-D-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+
+            OnboardingDraftView created = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-D", "PRODUCT-D", "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertTrue(created.channelEligible());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-D-1", created.currentRequirementVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(0L, created.draft().rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(1, created.draft().savedStep());
+            org.junit.jupiter.api.Assertions.assertTrue(created.draft().completedSteps().isEmpty());
+            org.junit.jupiter.api.Assertions.assertEquals("PRODUCT-D", jdbcTemplate.queryForObject("""
+                SELECT product_code FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, created.draft().applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals("ACTIVE", jdbcTemplate.queryForObject("""
+                SELECT active_draft_guard FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, created.draft().applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals("[]", jdbcTemplate.queryForObject("""
+                SELECT step_completion_json FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, created.draft().kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_kyc_draft_default_snapshot
+                WHERE tenant_id = ? AND kyc_version_id = ?
+                """, Integer.class, tenantId, created.draft().kycVersionId()));
+
+            OnboardingDraftView repeated = onboardingDraftService
+                .createOrLoad(tenantId, operatorUserId, merchantId, "CHANNEL-D", "PRODUCT-D", "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(created.draft().applicationId(), repeated.draft()
+                .applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_onboarding_application
+                WHERE tenant_id = ? AND merchant_id = ? AND active_draft_guard = 'ACTIVE'
+                """, Integer.class, tenantId, merchantId));
+
+            OnboardingDraftView saved = onboardingDraftService
+                .saveProgress(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId(), 3, List
+                    .of(1, 2), 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(1L, saved.draft().rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(1, 2), saved.draft().completedSteps());
+            OnboardingDraftView restored = onboardingDraftService.load(tenantId, operatorUserId, merchantId, created
+                .draft()
+                .applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals(3, restored.draft().savedStep());
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(1, 2), restored.draft().completedSteps());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(OnboardingDraftConflictException.class, () -> onboardingDraftService
+                    .saveProgress(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId(), 4, List
+                        .of(1, 2, 3), 0L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> onboardingDraftService
+                .saveProgress(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId(), 3, List
+                    .of(1, 3), 1L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingDraftService
+                    .load(tenantId, siblingUserId, merchantId, created.draft().applicationId()));
+
+            insertChannelProductVersion(920602L, tenantId, "CHANNEL-D", "PRODUCT-D", "CFG-D-2", "REQ-D-2", "[\"ENTERPRISE\"]", "DISABLED", baseTime
+                .plusHours(1));
+            OnboardingDraftView unavailable = onboardingDraftService
+                .load(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertFalse(unavailable.channelEligible());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-D-1", unavailable.draft().requirementVersion());
+            merchantMasterService
+                .changeLifecycle(tenantId, rootUserId, merchantId, MerchantStatus.DISABLED, "draft merchant disabled", 0L);
+            org.junit.jupiter.api.Assertions.assertFalse(onboardingDraftService
+                .load(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId())
+                .channelEligible());
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> onboardingDraftService
+                .saveProgress(tenantId, merchantAgentUserId, merchantId, created.draft().applicationId(), 4, List
+                    .of(1, 2, 3), 1L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'ONBOARDING_DRAFT_CREATE'
+                """, Integer.class, tenantId, created.draft().applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'ONBOARDING_DRAFT_SAVE'
+                """, Integer.class, tenantId, created.draft().applicationId()));
         });
     }
 

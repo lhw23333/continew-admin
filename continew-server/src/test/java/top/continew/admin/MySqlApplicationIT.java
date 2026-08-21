@@ -128,6 +128,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyChannelEligibility();
     }
 
+    @Test
+    void onboardingDraftsAreExplicitRecoverableAndOptimisticallyVersioned() {
+        verifyOnboardingDraftPersistence();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()
