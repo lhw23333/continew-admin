@@ -93,6 +93,31 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifySubordinateAgentProvisioningIsAtomic();
     }
 
+    @Test
+    void promotionCodeOwnershipIsServerResolved() {
+        verifyPromotionCodeOwnership();
+    }
+
+    @Test
+    void agentPricingVersionsAreBoundedAndImmutable() {
+        verifyAgentPricingVersions();
+    }
+
+    @Test
+    void agentMerchantDefaultsAreSnapshottedPerDraft() {
+        verifyAgentMerchantDefaults();
+    }
+
+    @Test
+    void concurrentLegalSubjectCreationIsDeterministic() throws Exception {
+        verifyConcurrentLegalSubjectUniqueness();
+    }
+
+    @Test
+    void merchantProvisioningIsAtomic() {
+        verifyMerchantProvisioningIsAtomic();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

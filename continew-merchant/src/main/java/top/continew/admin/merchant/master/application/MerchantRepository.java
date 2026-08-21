@@ -27,7 +27,11 @@ public interface MerchantRepository {
 
     boolean existsById(Long tenantId, Long merchantId);
 
+    boolean existsByLegalSubjectHash(Long tenantId, String legalSubjectHash);
+
     void insert(Merchant merchant);
+
+    boolean updateProfile(Merchant merchant, Long expectedVersion);
 
     boolean updateLifecycle(Merchant merchant, Long expectedVersion);
 }

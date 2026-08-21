@@ -23,10 +23,10 @@ import java.time.LocalDateTime;
 /** Merchant master aggregate. Channel onboarding states live outside this aggregate. */
 public record Merchant(Long id, Long tenantId, Long owningAgentId, String merchantNo, MerchantType merchantType,
                        String legalName, String shortName, String legalSubjectHash, Long operatorUserId,
-                       Long reviewerUserId, String contactName, EncryptedMobileNumber contactMobile, String industry,
-                       String productDescription, MerchantStatus status, String disabledReason,
-                       Long certifiedKycVersionId, Long rowVersion, LocalDateTime createTime,
-                       LocalDateTime updateTime) {
+                       Long reviewerUserId, EncryptedMobileNumber reviewerMobile, String contactName,
+                       EncryptedMobileNumber contactMobile, String industry, String productDescription,
+                       MerchantStatus status, String disabledReason, Long certifiedKycVersionId, Long rowVersion,
+                       LocalDateTime createTime, LocalDateTime updateTime) {
 
     public Merchant {
         if (id == null || tenantId == null || owningAgentId == null || operatorUserId == null || reviewerUserId == null || merchantType == null || status == null || rowVersion == null || createTime == null) {
@@ -39,9 +39,10 @@ public record Merchant(Long id, Long tenantId, Long owningAgentId, String mercha
             .merchantNo()
             .trim(), registration.merchantType(), registration.legalName().trim(), registration.shortName()
                 .trim(), normalizeOptional(registration.legalSubjectHash()), registration.operatorUserId(), registration
-                    .reviewerUserId(), normalizeOptional(registration.contactName()), registration
-                        .contactMobile(), normalizeOptional(registration.industry()), normalizeOptional(registration
-                            .productDescription()), MerchantStatus.DRAFT, null, null, 0L, now, null);
+                    .reviewerUserId(), registration.reviewerMobile(), normalizeOptional(registration
+                        .contactName()), registration.contactMobile(), normalizeOptional(registration
+                            .industry()), normalizeOptional(registration
+                                .productDescription()), MerchantStatus.DRAFT, null, null, 0L, now, null);
     }
 
     public Merchant changeStatus(MerchantStatus newStatus, String reason, LocalDateTime now) {
@@ -52,9 +53,23 @@ public record Merchant(Long id, Long tenantId, Long owningAgentId, String mercha
         if (newStatus == MerchantStatus.DISABLED && normalizedReason == null) {
             throw new MerchantDomainException("Disable reason is required");
         }
-        return new Merchant(id, tenantId, owningAgentId, merchantNo, merchantType, legalName, shortName, legalSubjectHash, operatorUserId, reviewerUserId, contactName, contactMobile, industry, productDescription, newStatus, newStatus == MerchantStatus.DISABLED
+        return new Merchant(id, tenantId, owningAgentId, merchantNo, merchantType, legalName, shortName, legalSubjectHash, operatorUserId, reviewerUserId, reviewerMobile, contactName, contactMobile, industry, productDescription, newStatus, newStatus == MerchantStatus.DISABLED
             ? normalizedReason
             : null, certifiedKycVersionId, rowVersion + 1, createTime, now);
+    }
+
+    public Merchant updateProfile(String newShortName,
+                                  String newContactName,
+                                  EncryptedMobileNumber newContactMobile,
+                                  EncryptedMobileNumber newReviewerMobile,
+                                  String newIndustry,
+                                  String newProductDescription,
+                                  LocalDateTime now) {
+        String normalizedShortName = requiredText(newShortName, 100, "shortName");
+        String normalizedContactName = requiredText(newContactName, 100, "contactName");
+        String normalizedIndustry = optionalText(newIndustry, 100, "industry");
+        String normalizedDescription = optionalText(newProductDescription, 255, "productDescription");
+        return new Merchant(id, tenantId, owningAgentId, merchantNo, merchantType, legalName, normalizedShortName, legalSubjectHash, operatorUserId, reviewerUserId, newReviewerMobile, normalizedContactName, newContactMobile, normalizedIndustry, normalizedDescription, status, disabledReason, certifiedKycVersionId, rowVersion + 1, createTime, now);
     }
 
     public boolean isDirectIdentity(Long userId) {
@@ -63,5 +78,20 @@ public record Merchant(Long id, Long tenantId, Long owningAgentId, String mercha
 
     private static String normalizeOptional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String requiredText(String value, int maxLength, String name) {
+        if (value == null || value.isBlank() || value.trim().length() > maxLength) {
+            throw new MerchantDomainException("Merchant " + name + " is invalid");
+        }
+        return value.trim();
+    }
+
+    private static String optionalText(String value, int maxLength, String name) {
+        String normalized = normalizeOptional(value);
+        if (normalized != null && normalized.length() > maxLength) {
+            throw new MerchantDomainException("Merchant " + name + " is too long");
+        }
+        return normalized;
     }
 }

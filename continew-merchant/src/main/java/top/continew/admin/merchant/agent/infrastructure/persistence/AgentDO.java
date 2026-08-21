@@ -20,6 +20,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import top.continew.admin.common.base.model.entity.TenantBaseDO;
 import top.continew.admin.merchant.agent.domain.AgentStatus;
+import top.continew.admin.merchant.agent.domain.AgentPromotionCodeStatus;
 
 import java.io.Serial;
 
@@ -45,6 +46,7 @@ public class AgentDO extends TenantBaseDO {
     private String contactMobileKeyVersion;
     private String remarks;
     private String promotionCode;
+    private AgentPromotionCodeStatus promotionCodeStatus;
     private AgentStatus status;
     private String disabledReason;
     private Long rowVersion;

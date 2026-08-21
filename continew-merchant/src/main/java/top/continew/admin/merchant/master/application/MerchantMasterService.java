@@ -24,9 +24,11 @@ import top.continew.admin.merchant.agent.domain.AgentAccessDeniedException;
 import top.continew.admin.merchant.master.domain.Merchant;
 import top.continew.admin.merchant.master.domain.MerchantAccessDeniedException;
 import top.continew.admin.merchant.master.domain.MerchantConcurrentModificationException;
+import top.continew.admin.merchant.master.domain.MerchantDuplicateLegalSubjectException;
 import top.continew.admin.merchant.master.domain.MerchantDomainException;
 import top.continew.admin.merchant.master.domain.MerchantRegistration;
 import top.continew.admin.merchant.master.domain.MerchantStatus;
+import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 import top.continew.starter.extension.tenant.context.TenantContextHolder;
 
 import java.time.Clock;
@@ -57,6 +59,10 @@ public class MerchantMasterService {
         if (merchantRepository.existsById(registration.tenantId(), registration.id())) {
             throw new MerchantDomainException("Merchant ID already exists");
         }
+        if (registration.legalSubjectHash() != null && merchantRepository.existsByLegalSubjectHash(registration
+            .tenantId(), registration.legalSubjectHash())) {
+            throw new MerchantDuplicateLegalSubjectException();
+        }
         Merchant merchant = Merchant.create(registration, LocalDateTime.now(clock));
         merchantRepository.insert(merchant);
         return merchant;
@@ -76,6 +82,36 @@ public class MerchantMasterService {
         }
         Merchant changed = current.changeStatus(status, reason, LocalDateTime.now(clock));
         if (!merchantRepository.updateLifecycle(changed, expectedVersion)) {
+            throw new MerchantConcurrentModificationException();
+        }
+        return changed;
+    }
+
+    public Merchant requireAccessible(Long tenantId, Long actorUserId, Long merchantId) {
+        requireTenantContext(tenantId);
+        return merchantScopeAuthorizationService.requireAccessible(tenantId, actorUserId, merchantId);
+    }
+
+    @Transactional
+    public Merchant updateProfile(Long tenantId,
+                                  Long actorUserId,
+                                  Long merchantId,
+                                  String shortName,
+                                  String contactName,
+                                  EncryptedMobileNumber contactMobile,
+                                  EncryptedMobileNumber reviewerMobile,
+                                  String industry,
+                                  String productDescription,
+                                  Long expectedVersion) {
+        requireTenantContext(tenantId);
+        Merchant current = merchantScopeAuthorizationService.requireAccessible(tenantId, actorUserId, merchantId);
+        if (!current.rowVersion().equals(expectedVersion)) {
+            throw new MerchantConcurrentModificationException();
+        }
+        Merchant changed = current
+            .updateProfile(shortName, contactName, contactMobile, reviewerMobile, industry, productDescription, LocalDateTime
+                .now(clock));
+        if (!merchantRepository.updateProfile(changed, expectedVersion)) {
             throw new MerchantConcurrentModificationException();
         }
         return changed;

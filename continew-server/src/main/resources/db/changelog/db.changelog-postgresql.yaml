@@ -16,11 +16,19 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/agent-identity.sql
   - include:
+      file: db/changelog/postgresql/merchant/merchant-identity.sql
+  - include:
+      file: db/changelog/postgresql/merchant/merchant-reverification.sql
+  - include:
       file: db/changelog/postgresql/merchant/sensitive-key-versions.sql
   - include:
       file: db/changelog/postgresql/merchant/security-audit.sql
   - include:
       file: db/changelog/postgresql/merchant/merchant-operations.sql
+  - include:
+      file: db/changelog/postgresql/merchant/agent-pricing.sql
+  - include:
+      file: db/changelog/postgresql/merchant/agent-defaults.sql
   - include:
       file: db/changelog/postgresql/merchant/merchant-constraints.sql
   - include:

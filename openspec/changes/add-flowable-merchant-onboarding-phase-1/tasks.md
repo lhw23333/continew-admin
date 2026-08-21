@@ -48,20 +48,23 @@
 - [x] 5.2 Implement scoped agent list/detail APIs with combined filters, stable pagination, and sibling-agent enumeration tests
 - [x] 5.3 Implement subordinate creation with generated login identity, server-resolved parent, validation, and atomic ContiNew user/role binding
 - [x] 5.4 Implement allowed profile edits, self-disable prevention, subordinate enable/disable, session revocation, and password-reset audit
-- [ ] 5.5 Implement promotion code binding and active/disabled ownership validation without client-selectable agent reassignment
-- [ ] 5.6 Implement immutable agent pricing versions, parent-bound validation, effective time, uniqueness, and change audit
-- [ ] 5.7 Implement versioned merchant defaults and draft-time inheritance without rewriting existing merchant/onboarding history
-- [ ] 5.8 Implement Vue agent filters, list actions, blank create/edit forms, pricing/default editors, permission visibility, and conflict/error states
+- [x] 5.5 Implement promotion code binding and active/disabled ownership validation without client-selectable agent reassignment
+- [x] 5.6 Implement immutable agent pricing versions, parent-bound validation, effective time, uniqueness, and change audit
+- [x] 5.7 Implement versioned merchant defaults and draft-time inheritance without rewriting existing merchant/onboarding history
+- [x] 5.8 Implement Vue agent filters, list actions, blank create/edit forms, pricing/default editors, permission visibility, and conflict/error states
 
 ## 6. Merchant Master
 
 > Task 6.1 is executed before task 4.3 as a security prerequisite; continue this capability with task 6.2.
+>
+> Execution-order override: task 6.3 requires authoritative channel relationship/status summaries. Execute
+> `6.4 → 6.5 → 6.6 → 6.3`, then return to the scoped summary API after the channel-state boundary is available.
 
-- [ ] 6.2 Implement normalized legal-subject uniqueness with concurrent-create tests and deterministic duplicate response
+- [x] 6.2 Implement normalized legal-subject uniqueness with concurrent-create tests and deterministic duplicate response
 - [ ] 6.3 Implement scoped merchant search/detail APIs with channel/pricing summary and state/permission-derived actions
-- [ ] 6.4 Implement atomic merchant creation with distinct generated operator/reviewer identities and required field validation
-- [ ] 6.5 Implement ordinary profile edit rules and controlled re-verification routing for certified identity, ownership, and settlement-account changes
-- [ ] 6.6 Implement merchant enable/disable with reason, downstream-operation policy, session impact, and immutable audit
+- [x] 6.4 Implement atomic merchant creation with distinct generated operator/reviewer identities and required field validation
+- [x] 6.5 Implement ordinary profile edit rules and controlled re-verification routing for certified identity, ownership, and settlement-account changes
+- [x] 6.6 Implement merchant enable/disable with reason, downstream-operation policy, session impact, and immutable audit
 - [ ] 6.7 Implement Vue merchant filters, list, create/edit forms, channel summary, lifecycle action confirmation, and responsive validation
 
 ## 7. Versioned Five-Step Onboarding

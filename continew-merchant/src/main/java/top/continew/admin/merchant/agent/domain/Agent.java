@@ -19,25 +19,28 @@ package top.continew.admin.merchant.agent.domain;
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 /** Agent aggregate. Authorization is derived from closure rows, never from {@link #path()}. */
 public record Agent(Long id, Long tenantId, Long parentId, String path, Long userId, Long deptId, String agentNo,
                     String name, String contactName, EncryptedMobileNumber contactMobile, String remarks,
-                    String promotionCode, AgentStatus status, String disabledReason, Long rowVersion,
-                    LocalDateTime createTime, LocalDateTime updateTime) {
+                    String promotionCode, AgentPromotionCodeStatus promotionCodeStatus, AgentStatus status,
+                    String disabledReason, Long rowVersion, LocalDateTime createTime, LocalDateTime updateTime) {
 
     public Agent {
-        if (id == null || tenantId == null || userId == null || parentId == null || path == null || status == null || rowVersion == null || createTime == null) {
+        if (id == null || tenantId == null || userId == null || parentId == null || path == null || status == null || promotionCodeStatus == null || rowVersion == null || createTime == null) {
             throw new IllegalArgumentException("Required agent fields must not be null");
         }
     }
 
     public static Agent create(AgentRegistration registration, String path, LocalDateTime now) {
+        String normalizedPromotionCode = normalizePromotionCode(registration.promotionCode());
         return new Agent(registration.id(), registration.tenantId(), registration.parentId(), path, registration
             .userId(), registration.deptId(), registration.agentNo().trim(), registration.name()
                 .trim(), trimToNull(registration.contactName()), registration
-                    .contactMobile(), null, trimToNull(registration
-                        .promotionCode()), AgentStatus.ENABLED, null, 0L, now, null);
+                    .contactMobile(), null, normalizedPromotionCode, normalizedPromotionCode == null
+                        ? AgentPromotionCodeStatus.DISABLED
+                        : AgentPromotionCodeStatus.ACTIVE, AgentStatus.ENABLED, null, 0L, now, null);
     }
 
     public Agent changeStatus(AgentStatus newStatus, String reason, LocalDateTime now) {
@@ -48,7 +51,7 @@ public record Agent(Long id, Long tenantId, Long parentId, String path, Long use
         if (newStatus == AgentStatus.DISABLED && normalizedReason == null) {
             throw new AgentDomainException("Disable reason is required");
         }
-        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, name, contactName, contactMobile, remarks, promotionCode, newStatus, newStatus == AgentStatus.DISABLED
+        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, name, contactName, contactMobile, remarks, promotionCode, promotionCodeStatus, newStatus, newStatus == AgentStatus.DISABLED
             ? normalizedReason
             : null, rowVersion + 1, createTime, now);
     }
@@ -66,7 +69,25 @@ public record Agent(Long id, Long tenantId, Long parentId, String path, Long use
                 .length() > 100 || normalizedRemarks != null && normalizedRemarks.length() > 255) {
             throw new AgentDomainException("Agent profile fields are invalid");
         }
-        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, normalizedName, normalizedContactName, newContactMobile, normalizedRemarks, promotionCode, status, disabledReason, rowVersion + 1, createTime, now);
+        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, normalizedName, normalizedContactName, newContactMobile, normalizedRemarks, promotionCode, promotionCodeStatus, status, disabledReason, rowVersion + 1, createTime, now);
+    }
+
+    public Agent assignPromotionCode(String code, LocalDateTime now) {
+        if (promotionCode != null) {
+            throw new AgentDomainException("Agent promotion code is already assigned");
+        }
+        String normalizedCode = normalizePromotionCode(code);
+        if (normalizedCode == null || normalizedCode.length() > 32) {
+            throw new AgentDomainException("Agent promotion code is invalid");
+        }
+        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, name, contactName, contactMobile, remarks, normalizedCode, AgentPromotionCodeStatus.ACTIVE, status, disabledReason, rowVersion + 1, createTime, now);
+    }
+
+    public Agent changePromotionCodeStatus(AgentPromotionCodeStatus newStatus, LocalDateTime now) {
+        if (newStatus == null || newStatus.equals(promotionCodeStatus) || promotionCode == null) {
+            throw new AgentDomainException("Promotion code status change is invalid");
+        }
+        return new Agent(id, tenantId, parentId, path, userId, deptId, agentNo, name, contactName, contactMobile, remarks, promotionCode, newStatus, status, disabledReason, rowVersion + 1, createTime, now);
     }
 
     public boolean isEnabled() {
@@ -75,5 +96,10 @@ public record Agent(Long id, Long tenantId, Long parentId, String path, Long use
 
     private static String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String normalizePromotionCode(String value) {
+        String normalized = trimToNull(value);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
     }
 }

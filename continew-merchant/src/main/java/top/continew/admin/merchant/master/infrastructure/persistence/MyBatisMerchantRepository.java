@@ -17,10 +17,12 @@
 package top.continew.admin.merchant.master.infrastructure.persistence;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import top.continew.admin.merchant.master.application.MerchantRepository;
 import top.continew.admin.merchant.master.domain.Merchant;
 import top.continew.admin.merchant.master.domain.MerchantDomainException;
+import top.continew.admin.merchant.master.domain.MerchantDuplicateLegalSubjectException;
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 
 import java.util.Optional;
@@ -51,9 +53,25 @@ public class MyBatisMerchantRepository implements MerchantRepository {
     }
 
     @Override
+    public boolean existsByLegalSubjectHash(Long tenantId, String legalSubjectHash) {
+        return mapper.lambdaQuery()
+            .eq(MerchantDO::getTenantId, tenantId)
+            .eq(MerchantDO::getLegalSubjectHash, legalSubjectHash)
+            .eq(MerchantDO::getDeleted, 0L)
+            .exists();
+    }
+
+    @Override
     public void insert(Merchant merchant) {
-        if (mapper.insert(toDataObject(merchant)) != 1) {
-            throw new MerchantDomainException("Merchant persistence failed");
+        try {
+            if (mapper.insert(toDataObject(merchant)) != 1) {
+                throw new MerchantDomainException("Merchant persistence failed");
+            }
+        } catch (DataIntegrityViolationException ex) {
+            if (merchant.legalSubjectHash() != null) {
+                throw new MerchantDuplicateLegalSubjectException();
+            }
+            throw new MerchantDomainException("Merchant persistence conflicted");
         }
     }
 
@@ -71,14 +89,51 @@ public class MyBatisMerchantRepository implements MerchantRepository {
             .update();
     }
 
+    @Override
+    public boolean updateProfile(Merchant merchant, Long expectedVersion) {
+        var update = mapper.lambdaUpdate()
+            .eq(MerchantDO::getTenantId, merchant.tenantId())
+            .eq(MerchantDO::getId, merchant.id())
+            .eq(MerchantDO::getRowVersion, expectedVersion)
+            .eq(MerchantDO::getDeleted, 0L)
+            .set(MerchantDO::getShortName, merchant.shortName())
+            .set(MerchantDO::getContactName, merchant.contactName())
+            .set(MerchantDO::getIndustry, merchant.industry())
+            .set(MerchantDO::getProductDescription, merchant.productDescription())
+            .set(MerchantDO::getRowVersion, merchant.rowVersion())
+            .set(MerchantDO::getUpdateTime, merchant.updateTime());
+        setContactMobile(update, merchant.contactMobile());
+        setReviewerMobile(update, merchant.reviewerMobile());
+        return update.update();
+    }
+
+    private void setContactMobile(com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper<MerchantDO> update,
+                                  EncryptedMobileNumber mobile) {
+        update.set(MerchantDO::getContactMobileCiphertext, mobile.ciphertext())
+            .set(MerchantDO::getContactMobileHash, mobile.normalizedHash())
+            .set(MerchantDO::getContactMobileHashKeyVersion, mobile.hashKeyVersion())
+            .set(MerchantDO::getContactMobileMasked, mobile.maskedValue())
+            .set(MerchantDO::getContactMobileKeyVersion, mobile.keyVersion());
+    }
+
+    private void setReviewerMobile(com.baomidou.mybatisplus.extension.conditions.update.LambdaUpdateChainWrapper<MerchantDO> update,
+                                   EncryptedMobileNumber mobile) {
+        update.set(MerchantDO::getReviewerMobileCiphertext, mobile.ciphertext())
+            .set(MerchantDO::getReviewerMobileHash, mobile.normalizedHash())
+            .set(MerchantDO::getReviewerMobileHashKeyVersion, mobile.hashKeyVersion())
+            .set(MerchantDO::getReviewerMobileMasked, mobile.maskedValue())
+            .set(MerchantDO::getReviewerMobileKeyVersion, mobile.keyVersion());
+    }
+
     private Merchant toDomain(MerchantDO dataObject) {
         return new Merchant(dataObject.getId(), dataObject.getTenantId(), dataObject.getOwningAgentId(), dataObject
             .getMerchantNo(), dataObject.getMerchantType(), dataObject.getLegalName(), dataObject
                 .getShortName(), dataObject.getLegalSubjectHash(), dataObject.getOperatorUserId(), dataObject
-                    .getReviewerUserId(), dataObject.getContactName(), restoreMobile(dataObject), dataObject
-                        .getIndustry(), dataObject.getProductDescription(), dataObject.getStatus(), dataObject
-                            .getDisabledReason(), dataObject.getCertifiedKycVersionId(), dataObject
-                                .getRowVersion(), dataObject.getCreateTime(), dataObject.getUpdateTime());
+                    .getReviewerUserId(), restoreReviewerMobile(dataObject), dataObject
+                        .getContactName(), restoreMobile(dataObject), dataObject.getIndustry(), dataObject
+                            .getProductDescription(), dataObject.getStatus(), dataObject.getDisabledReason(), dataObject
+                                .getCertifiedKycVersionId(), dataObject.getRowVersion(), dataObject
+                                    .getCreateTime(), dataObject.getUpdateTime());
     }
 
     private MerchantDO toDataObject(Merchant merchant) {
@@ -93,6 +148,13 @@ public class MyBatisMerchantRepository implements MerchantRepository {
         dataObject.setLegalSubjectHash(merchant.legalSubjectHash());
         dataObject.setOperatorUserId(merchant.operatorUserId());
         dataObject.setReviewerUserId(merchant.reviewerUserId());
+        if (merchant.reviewerMobile() != null) {
+            dataObject.setReviewerMobileCiphertext(merchant.reviewerMobile().ciphertext());
+            dataObject.setReviewerMobileHash(merchant.reviewerMobile().normalizedHash());
+            dataObject.setReviewerMobileHashKeyVersion(merchant.reviewerMobile().hashKeyVersion());
+            dataObject.setReviewerMobileMasked(merchant.reviewerMobile().maskedValue());
+            dataObject.setReviewerMobileKeyVersion(merchant.reviewerMobile().keyVersion());
+        }
         dataObject.setContactName(merchant.contactName());
         if (merchant.contactMobile() != null) {
             dataObject.setContactMobileCiphertext(merchant.contactMobile().ciphertext());
@@ -123,6 +185,19 @@ public class MyBatisMerchantRepository implements MerchantRepository {
                     .getContactMobileHashKeyVersion(), dataObject.getContactMobileMasked());
         } catch (IllegalArgumentException ex) {
             throw new MerchantDomainException("Stored merchant mobile protection metadata is incomplete");
+        }
+    }
+
+    private EncryptedMobileNumber restoreReviewerMobile(MerchantDO dataObject) {
+        if (dataObject.getReviewerMobileCiphertext() == null) {
+            return null;
+        }
+        try {
+            return EncryptedMobileNumber.restore(dataObject.getReviewerMobileCiphertext(), dataObject
+                .getReviewerMobileKeyVersion(), dataObject.getReviewerMobileHash(), dataObject
+                    .getReviewerMobileHashKeyVersion(), dataObject.getReviewerMobileMasked());
+        } catch (IllegalArgumentException ex) {
+            throw new MerchantDomainException("Stored merchant reviewer mobile protection metadata is incomplete");
         }
     }
 }

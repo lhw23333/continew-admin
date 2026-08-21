@@ -177,6 +177,17 @@ merchant-limit-adjustment-v1
 - WireMock simulates signed callbacks, duplicate/late events, timeouts, malformed payloads, and uncertain responses.
 - Frontend component/E2E tests cover wizard recovery, permission visibility, conflict handling, masked/reveal behavior, and task actions.
 
+### Decision 13: Certified merchant changes reuse the onboarding review process
+
+Legal-identity, ownership, and settlement-account changes SHALL create a `MERCHANT_REVERIFICATION` routing request
+that references `merchant-onboarding-review-v1` instead of introducing a second BPMN definition. The routing request
+stores change types, target ownership reference where applicable, merchant business version, reason, and future KYC
+version reference only. Raw legal identifiers, bank accounts, and complete mobile values remain in the versioned KYC
+domain and SHALL NOT be stored in the routing request or workflow variables.
+
+The initial routing state is `AWAITING_KYC_DRAFT`; onboarding task 7.2 attaches the new KYC draft before workflow
+submission. Ordinary profile updates cannot mutate certified identity, owning agent, or settlement references.
+
 ## Risks / Trade-offs
 
 - **[Dependency convergence] Flowable and ContiNew may bring incompatible MyBatis/Jackson/Spring transitive versions** → Pin a proven Flowable 7.x patch, run Maven dependency convergence, and execute boot/database tests before domain work.

@@ -57,6 +57,15 @@ public class MyBatisAgentRepository implements AgentRepository {
     }
 
     @Override
+    public Optional<Agent> findByPromotionCode(Long tenantId, String promotionCode) {
+        return Optional.ofNullable(mapper.lambdaQuery()
+            .eq(AgentDO::getTenantId, tenantId)
+            .eq(AgentDO::getPromotionCode, promotionCode)
+            .eq(AgentDO::getDeleted, 0L)
+            .one()).map(this::toDomain);
+    }
+
+    @Override
     public boolean existsById(Long tenantId, Long agentId) {
         return mapper.lambdaQuery()
             .eq(AgentDO::getTenantId, tenantId)
@@ -79,6 +88,15 @@ public class MyBatisAgentRepository implements AgentRepository {
         return mapper.lambdaQuery()
             .eq(AgentDO::getTenantId, tenantId)
             .eq(AgentDO::getUserId, userId)
+            .eq(AgentDO::getDeleted, 0L)
+            .exists();
+    }
+
+    @Override
+    public boolean existsByPromotionCode(Long tenantId, String promotionCode) {
+        return mapper.lambdaQuery()
+            .eq(AgentDO::getTenantId, tenantId)
+            .eq(AgentDO::getPromotionCode, promotionCode)
             .eq(AgentDO::getDeleted, 0L)
             .exists();
     }
@@ -141,6 +159,20 @@ public class MyBatisAgentRepository implements AgentRepository {
     }
 
     @Override
+    public boolean updatePromotionCode(Agent agent, Long expectedVersion) {
+        return mapper.lambdaUpdate()
+            .eq(AgentDO::getTenantId, agent.tenantId())
+            .eq(AgentDO::getId, agent.id())
+            .eq(AgentDO::getRowVersion, expectedVersion)
+            .eq(AgentDO::getDeleted, 0L)
+            .set(AgentDO::getPromotionCode, agent.promotionCode())
+            .set(AgentDO::getPromotionCodeStatus, agent.promotionCodeStatus())
+            .set(AgentDO::getRowVersion, agent.rowVersion())
+            .set(AgentDO::getUpdateTime, agent.updateTime())
+            .update();
+    }
+
+    @Override
     public void insert(Agent agent) {
         if (mapper.insert(toDataObject(agent)) != 1) {
             throw new AgentDomainException("Agent persistence failed");
@@ -165,8 +197,9 @@ public class MyBatisAgentRepository implements AgentRepository {
         return new Agent(dataObject.getId(), dataObject.getTenantId(), dataObject.getParentId(), dataObject
             .getPath(), dataObject.getUserId(), dataObject.getDeptId(), dataObject.getAgentNo(), dataObject
                 .getName(), dataObject.getContactName(), restoreMobile(dataObject), dataObject.getRemarks(), dataObject
-                    .getPromotionCode(), dataObject.getStatus(), dataObject.getDisabledReason(), dataObject
-                        .getRowVersion(), dataObject.getCreateTime(), dataObject.getUpdateTime());
+                    .getPromotionCode(), dataObject.getPromotionCodeStatus(), dataObject.getStatus(), dataObject
+                        .getDisabledReason(), dataObject.getRowVersion(), dataObject.getCreateTime(), dataObject
+                            .getUpdateTime());
     }
 
     private AgentDO toDataObject(Agent agent) {
@@ -189,6 +222,7 @@ public class MyBatisAgentRepository implements AgentRepository {
         }
         dataObject.setRemarks(agent.remarks());
         dataObject.setPromotionCode(agent.promotionCode());
+        dataObject.setPromotionCodeStatus(agent.promotionCodeStatus());
         dataObject.setStatus(agent.status());
         dataObject.setDisabledReason(agent.disabledReason());
         dataObject.setRowVersion(agent.rowVersion());

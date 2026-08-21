@@ -18,12 +18,31 @@ package top.continew.admin.merchant.master.domain;
 
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 
+import java.util.Locale;
+
 /** Merchant registration after ContiNew operator/reviewer identities have been resolved. */
 public record MerchantRegistration(Long id, Long tenantId, Long owningAgentId, String merchantNo,
                                    MerchantType merchantType, String legalName, String shortName,
                                    String legalSubjectHash, Long operatorUserId, Long reviewerUserId,
-                                   String contactName, EncryptedMobileNumber contactMobile, String industry,
-                                   String productDescription) {
+                                   EncryptedMobileNumber reviewerMobile, String contactName,
+                                   EncryptedMobileNumber contactMobile, String industry, String productDescription) {
+
+    public MerchantRegistration(Long id,
+                                Long tenantId,
+                                Long owningAgentId,
+                                String merchantNo,
+                                MerchantType merchantType,
+                                String legalName,
+                                String shortName,
+                                String legalSubjectHash,
+                                Long operatorUserId,
+                                Long reviewerUserId,
+                                String contactName,
+                                EncryptedMobileNumber contactMobile,
+                                String industry,
+                                String productDescription) {
+        this(id, tenantId, owningAgentId, merchantNo, merchantType, legalName, shortName, legalSubjectHash, operatorUserId, reviewerUserId, null, contactName, contactMobile, industry, productDescription);
+    }
 
     public MerchantRegistration {
         requirePositive(id, "id");
@@ -45,6 +64,7 @@ public record MerchantRegistration(Long id, Long tenantId, Long owningAgentId, S
         if (legalSubjectHash != null && !legalSubjectHash.matches("[0-9a-fA-F]{64}")) {
             throw new IllegalArgumentException("legalSubjectHash must be a SHA-256/HMAC hex value");
         }
+        legalSubjectHash = legalSubjectHash == null ? null : legalSubjectHash.toLowerCase(Locale.ROOT);
     }
 
     private static void requirePositive(Long value, String name) {

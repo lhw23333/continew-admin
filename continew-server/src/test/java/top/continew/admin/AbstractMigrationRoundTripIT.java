@@ -36,6 +36,7 @@ abstract class AbstractMigrationRoundTripIT {
     @Test
     void phaseOneSchemaSupportsForwardRollbackForwardRoundTrip() {
         DataSource dataSource = createDataSource();
+        initializeBaseSchema(dataSource);
         applyForward(dataSource);
         assertSchemaPresent(dataSource);
 
@@ -46,9 +47,14 @@ abstract class AbstractMigrationRoundTripIT {
         assertSchemaPresent(dataSource);
     }
 
+    private void initializeBaseSchema(DataSource dataSource) {
+        String prefix = "db/changelog/" + databaseFolder();
+        execute(dataSource, prefix + "/main_table.sql", prefix + "/plugin/plugin_open.sql", prefix + "/plugin/plugin_schedule.sql", prefix + "/plugin/plugin_generator.sql", prefix + "/plugin/plugin_tenant.sql");
+    }
+
     private void applyForward(DataSource dataSource) {
         String prefix = "db/changelog/" + databaseFolder();
-        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/flowable/flowable-7.1.0.sql");
+        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/agent-identity.sql", prefix + "/merchant/merchant-identity.sql", prefix + "/merchant/merchant-reverification.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/agent-pricing.sql", prefix + "/merchant/agent-defaults.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/flowable/flowable-7.1.0.sql");
     }
 
     private void execute(DataSource dataSource, String... paths) {

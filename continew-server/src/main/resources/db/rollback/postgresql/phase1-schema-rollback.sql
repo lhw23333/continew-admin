@@ -1,6 +1,11 @@
 -- Phase-one schema rollback for empty test databases only. Never run for application rollback.
 DELETE FROM sys_user_role WHERE role_id IN (SELECT id FROM sys_role WHERE code = 'AGENT_ADMIN');
+DELETE FROM sys_role_menu WHERE role_id IN (SELECT id FROM sys_role WHERE code = 'AGENT_ADMIN');
+DELETE FROM tenant_package_menu WHERE menu_id IN (690000000000100000, 690000000000100100);
+DELETE FROM sys_menu WHERE id BETWEEN 690000000000100000 AND 690000000000100109;
 DELETE FROM sys_role WHERE code = 'AGENT_ADMIN';
+DELETE FROM sys_user_role WHERE role_id IN (SELECT id FROM sys_role WHERE code IN ('MERCHANT_OPERATOR', 'MERCHANT_REVIEWER'));
+DELETE FROM sys_role WHERE code IN ('MERCHANT_OPERATOR', 'MERCHANT_REVIEWER');
 ALTER TABLE sys_user DROP COLUMN IF EXISTS must_change_password;
 DROP TABLE IF EXISTS biz_security_audit CASCADE;
 DROP FUNCTION IF EXISTS biz_prevent_security_audit_mutation() CASCADE;
@@ -9,7 +14,12 @@ DROP TABLE IF EXISTS biz_outbox_event CASCADE;
 DROP TABLE IF EXISTS biz_limit_adjustment CASCADE;
 DROP TABLE IF EXISTS biz_workflow_instance CASCADE;
 DROP TABLE IF EXISTS biz_review_record CASCADE;
+DROP TABLE IF EXISTS biz_merchant_reverification_request CASCADE;
+DROP TABLE IF EXISTS biz_kyc_draft_default_snapshot CASCADE;
+DROP TABLE IF EXISTS biz_agent_merchant_default_version CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_agent_default_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_agent_pricing_version CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_agent_pricing_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_kyc_attachment CASCADE;
 DROP TABLE IF EXISTS biz_kyc_version CASCADE;
 DROP TABLE IF EXISTS biz_onboarding_application CASCADE;

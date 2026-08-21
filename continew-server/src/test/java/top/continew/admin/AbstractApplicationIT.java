@@ -29,24 +29,43 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
+import top.continew.admin.merchant.agent.application.AgentMerchantDefaultCreateCommand;
+import top.continew.admin.merchant.agent.application.AgentMerchantDefaultService;
+import top.continew.admin.merchant.agent.application.AgentPricingCreateCommand;
+import top.continew.admin.merchant.agent.application.AgentPricingService;
+import top.continew.admin.merchant.agent.application.AgentPromotionCodeService;
+import top.continew.admin.merchant.agent.application.AgentPromotionCodeView;
 import top.continew.admin.merchant.agent.application.AgentRepository;
 import top.continew.admin.merchant.agent.application.AgentListQuery;
 import top.continew.admin.merchant.agent.application.AgentPage;
 import top.continew.admin.merchant.agent.application.AgentQueryService;
 import top.continew.admin.merchant.agent.application.AgentScopeAuthorizationService;
 import top.continew.admin.merchant.agent.application.AgentSummary;
+import top.continew.admin.merchant.agent.application.PromotionOwnership;
 import top.continew.admin.merchant.agent.domain.Agent;
 import top.continew.admin.merchant.agent.domain.AgentAccessDeniedException;
 import top.continew.admin.merchant.agent.domain.AgentConcurrentModificationException;
 import top.continew.admin.merchant.agent.domain.AgentDomainException;
+import top.continew.admin.merchant.agent.domain.AgentMerchantDefaultProduct;
+import top.continew.admin.merchant.agent.domain.AgentMerchantDefaultVersion;
+import top.continew.admin.merchant.agent.domain.AgentPricingBoundaryException;
+import top.continew.admin.merchant.agent.domain.AgentPricingRules;
+import top.continew.admin.merchant.agent.domain.AgentPricingVersion;
+import top.continew.admin.merchant.agent.domain.AgentPromotionCodeStatus;
 import top.continew.admin.merchant.agent.domain.AgentRegistration;
 import top.continew.admin.merchant.agent.domain.AgentStatus;
+import top.continew.admin.merchant.agent.domain.KycDraftDefaultSnapshot;
+import top.continew.admin.merchant.agent.domain.PromotionOwnershipDeniedException;
 import top.continew.admin.merchant.master.application.MerchantMasterService;
+import top.continew.admin.merchant.master.application.MerchantOperationPolicyService;
+import top.continew.admin.merchant.master.application.MerchantOperationPolicyService.MerchantOperation;
 import top.continew.admin.merchant.master.application.MerchantRepository;
 import top.continew.admin.merchant.master.application.MerchantScopeAuthorizationService;
 import top.continew.admin.merchant.master.domain.Merchant;
 import top.continew.admin.merchant.master.domain.MerchantAccessDeniedException;
 import top.continew.admin.merchant.master.domain.MerchantConcurrentModificationException;
+import top.continew.admin.merchant.master.domain.MerchantDuplicateLegalSubjectException;
+import top.continew.admin.merchant.master.domain.MerchantDomainException;
 import top.continew.admin.merchant.master.domain.MerchantRegistration;
 import top.continew.admin.merchant.master.domain.MerchantStatus;
 import top.continew.admin.merchant.master.domain.MerchantType;
@@ -64,14 +83,26 @@ import top.continew.admin.system.config.file.FileStorageConfigLoader;
 import top.continew.admin.system.config.sms.SmsConfigLoader;
 import top.continew.admin.service.merchant.SubordinateAgentCreateCommand;
 import top.continew.admin.service.merchant.AgentAdministrationService;
+import top.continew.admin.service.merchant.MerchantCreateCommand;
+import top.continew.admin.service.merchant.MerchantAdministrationService;
+import top.continew.admin.service.merchant.MerchantProvisioningResult;
+import top.continew.admin.service.merchant.MerchantProvisioningService;
+import top.continew.admin.service.merchant.MerchantReverificationRoutingService;
+import top.continew.admin.service.merchant.MerchantReverificationRoutingService.MerchantReverificationChangeType;
 import top.continew.admin.service.merchant.SubordinateAgentProvisioningResult;
 import top.continew.admin.service.merchant.SubordinateAgentProvisioningService;
 import top.continew.admin.auth.service.OnlineUserService;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 @SpringBootTest
 abstract class AbstractApplicationIT {
@@ -96,6 +127,15 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private AgentQueryService agentQueryService;
+
+    @Autowired
+    private AgentPromotionCodeService agentPromotionCodeService;
+
+    @Autowired
+    private AgentPricingService agentPricingService;
+
+    @Autowired
+    private AgentMerchantDefaultService agentMerchantDefaultService;
 
     @Autowired
     private MerchantMasterService merchantMasterService;
@@ -123,6 +163,18 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private AgentAdministrationService agentAdministrationService;
+
+    @Autowired
+    private MerchantProvisioningService merchantProvisioningService;
+
+    @Autowired
+    private MerchantOperationPolicyService merchantOperationPolicyService;
+
+    @Autowired
+    private MerchantAdministrationService merchantAdministrationService;
+
+    @Autowired
+    private MerchantReverificationRoutingService merchantReverificationRoutingService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -472,6 +524,10 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(result.userId(), child.userId());
             org.junit.jupiter.api.Assertions.assertEquals(result.deptId(), child.deptId());
             org.junit.jupiter.api.Assertions.assertEquals("139****1234", child.contactMobile().maskedValue());
+            org.junit.jupiter.api.Assertions.assertNotNull(child.promotionCode());
+            org.junit.jupiter.api.Assertions.assertTrue(child.promotionCode()
+                .matches("[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}"));
+            org.junit.jupiter.api.Assertions.assertEquals(AgentPromotionCodeStatus.ACTIVE, child.promotionCodeStatus());
             org.junit.jupiter.api.Assertions
                 .assertEquals(SubordinateAgentProvisioningService.PASSWORD_CHANGE_REQUIRED, result.credentialStatus());
             org.junit.jupiter.api.Assertions.assertTrue(result.username().startsWith("ag_sub_908_"));
@@ -501,6 +557,10 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM sys_user_role WHERE user_id = ? AND role_id = ?
                 """, Integer.class, result.userId(), roleId));
+            org.junit.jupiter.api.Assertions.assertEquals(11, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sys_role_menu WHERE role_id = ?
+                  AND menu_id BETWEEN 690000000000100000 AND 690000000000100109
+                """, Integer.class, roleId));
 
             org.junit.jupiter.api.Assertions.assertThrows(AgentDomainException.class, () -> agentAdministrationService
                 .changeLifecycle(tenantId, parentUserId, rootAgentId, AgentStatus.DISABLED, "self disable", 0L, "127.0.0.1"));
@@ -545,6 +605,13 @@ abstract class AbstractApplicationIT {
                   AND action IN ('AGENT_PROFILE_UPDATE', 'AGENT_PASSWORD_RESET', 'AGENT_LIFECYCLE_CHANGE')
                 """, Integer.class, tenantId, result.agentId()));
 
+            SubordinateAgentProvisioningResult secondResult = subordinateAgentProvisioningService
+                .create(new SubordinateAgentCreateCommand(tenantId, parentUserId, "SUB-908-B", "Second Agent", "Second Contact", "13900004321", "TempPass4321!"));
+            Agent secondChild = agentRepository.findById(tenantId, secondResult.agentId()).orElseThrow();
+            org.junit.jupiter.api.Assertions.assertNotEquals(child.promotionCode(), secondChild.promotionCode());
+            org.junit.jupiter.api.Assertions.assertEquals(AgentPromotionCodeStatus.ACTIVE, secondChild
+                .promotionCodeStatus());
+
             Integer userCount = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM sys_user WHERE description = 'Agent account requires first-login password change'
                 """, Integer.class);
@@ -561,6 +628,488 @@ abstract class AbstractApplicationIT {
                 SELECT COUNT(*) FROM sys_dept WHERE description LIKE 'Agent department for SUB-908%'
                 """, Integer.class));
         });
+    }
+
+    protected void verifyPromotionCodeOwnership() {
+        long tenantId = 909L;
+        long rootAgentId = 99001L;
+        long codedAgentId = 99002L;
+        long issuedAgentId = 99003L;
+        long rootUserId = 99101L;
+        String fixedCode = "CHLDPRM23456";
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PROMO-ROOT"));
+            agentHierarchyService
+                .register(new AgentRegistration(codedAgentId, tenantId, rootAgentId, 99102L, "PROMO-CODED", "PROMO CODED", "Contact", null, fixedCode));
+            agentHierarchyService.register(registration(issuedAgentId, tenantId, rootAgentId, 99103L, "PROMO-ISSUED"));
+
+            PromotionOwnership resolved = agentPromotionCodeService
+                .resolveOwnership(tenantId, "  chldprm23456  ", null);
+            org.junit.jupiter.api.Assertions.assertEquals(codedAgentId, resolved.agentId());
+            org.junit.jupiter.api.Assertions.assertEquals(fixedCode, resolved.promotionCode());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(PromotionOwnershipDeniedException.class, () -> agentPromotionCodeService
+                    .resolveOwnership(tenantId, fixedCode, issuedAgentId));
+
+            AgentPromotionCodeView issued = agentPromotionCodeService
+                .issue(tenantId, rootUserId, issuedAgentId, 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(AgentPromotionCodeStatus.ACTIVE, issued.status());
+            org.junit.jupiter.api.Assertions.assertTrue(issued.promotionCode()
+                .matches("[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}"));
+            org.junit.jupiter.api.Assertions.assertNotEquals(fixedCode, issued.promotionCode());
+            AgentPromotionCodeView repeatedIssue = agentPromotionCodeService
+                .issue(tenantId, rootUserId, issuedAgentId, 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(issued.promotionCode(), repeatedIssue.promotionCode());
+
+            org.junit.jupiter.api.Assertions
+                .assertThrows(AgentConcurrentModificationException.class, () -> agentPromotionCodeService
+                    .changeStatus(tenantId, rootUserId, issuedAgentId, AgentPromotionCodeStatus.DISABLED, 0L, "127.0.0.1"));
+            AgentPromotionCodeView disabledCode = agentPromotionCodeService
+                .changeStatus(tenantId, rootUserId, issuedAgentId, AgentPromotionCodeStatus.DISABLED, 1L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(2L, disabledCode.rowVersion());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(PromotionOwnershipDeniedException.class, () -> agentPromotionCodeService
+                    .resolveOwnership(tenantId, issued.promotionCode(), null));
+            AgentPromotionCodeView enabledCode = agentPromotionCodeService
+                .changeStatus(tenantId, rootUserId, issuedAgentId, AgentPromotionCodeStatus.ACTIVE, 2L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(3L, enabledCode.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(issuedAgentId, agentPromotionCodeService
+                .resolveOwnership(tenantId, issued.promotionCode(), issuedAgentId)
+                .agentId());
+
+            agentHierarchyService
+                .changeLifecycle(tenantId, rootUserId, codedAgentId, AgentStatus.DISABLED, "promotion ownership disabled-agent test", 0L);
+            org.junit.jupiter.api.Assertions
+                .assertThrows(PromotionOwnershipDeniedException.class, () -> agentPromotionCodeService
+                    .resolveOwnership(tenantId, fixedCode, null));
+
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'AGENT_PROMOTION_CODE_ISSUE'
+                """, Integer.class, tenantId, issuedAgentId));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'AGENT_PROMOTION_CODE_STATUS'
+                """, Integer.class, tenantId, issuedAgentId));
+        });
+    }
+
+    protected void verifyAgentPricingVersions() {
+        long tenantId = 910L;
+        long rootAgentId = 99501L;
+        long childAgentId = 99502L;
+        long rootUserId = 99601L;
+        LocalDateTime firstEffective = LocalDateTime.of(2026, 8, 22, 9, 0);
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PRICING-ROOT"));
+            agentHierarchyService.register(registration(childAgentId, tenantId, rootAgentId, 99602L, "PRICING-CHILD"));
+
+            AgentPricingVersion rootV1 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, rootAgentId, "0.0100", "0.50", "0.60", firstEffective, "publish root pricing v1"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, rootV1.versionNo());
+            org.junit.jupiter.api.Assertions.assertNull(rootV1.parentPricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals("CHANNEL-A", rootV1.channelCode());
+            org.junit.jupiter.api.Assertions.assertEquals("PRODUCT-A", rootV1.productCode());
+
+            org.junit.jupiter.api.Assertions.assertThrows(AgentPricingBoundaryException.class, () -> agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, childAgentId, "0.0120", "0.75", "0.40", firstEffective
+                    .minusMinutes(1), "parent is not effective yet")));
+            AgentPricingVersion childV1 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, childAgentId, "0.0120", "0.75", "0.40", firstEffective
+                    .plusHours(1), "publish child pricing v1"));
+            org.junit.jupiter.api.Assertions.assertEquals(rootV1.id(), childV1.parentPricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(1, childV1.versionNo());
+
+            org.junit.jupiter.api.Assertions.assertThrows(AgentPricingBoundaryException.class, () -> agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, childAgentId, "0.0090", "0.75", "0.40", firstEffective
+                    .plusHours(2), "reject below parent cost")));
+
+            AgentPricingVersion rootV2 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, rootAgentId, "0.0110", "0.60", "0.50", firstEffective
+                    .plusDays(1), "publish root pricing v2"));
+            AgentPricingVersion childV2 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, childAgentId, "0.0130", "0.80", "0.45", firstEffective
+                    .plusDays(1)
+                    .plusHours(1), "publish child pricing v2"));
+            org.junit.jupiter.api.Assertions.assertEquals(2, rootV2.versionNo());
+            org.junit.jupiter.api.Assertions.assertEquals(2, childV2.versionNo());
+            org.junit.jupiter.api.Assertions.assertEquals(rootV2.id(), childV2.parentPricingVersionId());
+
+            List<AgentPricingVersion> childHistory = agentPricingService
+                .list(tenantId, rootUserId, childAgentId, "channel-a", "product-a", "cny");
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(childV2.id(), childV1.id()), childHistory.stream()
+                .map(AgentPricingVersion::id)
+                .toList());
+
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                INSERT INTO biz_agent_pricing_version
+                (id, tenant_id, agent_id, parent_pricing_version_id, version_no, channel_code, product_code,
+                 currency, pricing_rules_json, effective_time, expires_time, status, create_user, create_time, deleted)
+                VALUES (?, ?, ?, NULL, 1, 'CHANNEL-A', 'PRODUCT-A', 'CNY', '{}', ?, NULL, 'PUBLISHED', ?, ?, 0)
+                """, 99991001L, tenantId, rootAgentId, firstEffective, rootUserId, firstEffective));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_agent_pricing_version SET pricing_rules_json = '{}' WHERE id = ?
+                """, rootV1.id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_agent_pricing_version WHERE id = ?
+                """, childV1.id()));
+
+            org.junit.jupiter.api.Assertions.assertEquals(4, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND action = 'AGENT_PRICING_VERSION_CREATE'
+                """, Integer.class, tenantId));
+            String rootV2Audit = jdbcTemplate.queryForObject("""
+                SELECT reason FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'AGENT_PRICING_VERSION_CREATE'
+                """, String.class, tenantId, rootV2.id());
+            org.junit.jupiter.api.Assertions.assertTrue(rootV2Audit.contains(rootV1.id().toString()));
+        });
+    }
+
+    protected void verifyAgentMerchantDefaults() {
+        long tenantId = 911L;
+        long rootAgentId = 99701L;
+        long childAgentId = 99702L;
+        long rootUserId = 99801L;
+        long merchantId = 99901L;
+        long firstKycVersionId = 99902L;
+        long secondKycVersionId = 99903L;
+        LocalDateTime pricingV1Effective = LocalDateTime.of(2026, 8, 20, 9, 0);
+        LocalDateTime defaultV1Effective = LocalDateTime.of(2026, 8, 20, 10, 0);
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "DEFAULT-ROOT"));
+            agentHierarchyService.register(registration(childAgentId, tenantId, rootAgentId, 99802L, "DEFAULT-CHILD"));
+
+            AgentPricingVersion pricingV1 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, rootAgentId, "0.0100", "0.50", "0.60", pricingV1Effective, "default pricing v1"));
+            AgentMerchantDefaultVersion defaultV1 = agentMerchantDefaultService
+                .create(defaultCommand(tenantId, rootUserId, rootAgentId, pricingV1, defaultV1Effective, "publish merchant defaults v1"));
+
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, rootAgentId, 99911L, 99912L, "DEFAULT-MERCHANT", "f"
+                    .repeat(64)));
+            insertKycDraft(firstKycVersionId, tenantId, merchantId, 1, LocalDateTime.of(2026, 8, 21, 10, 0));
+            KycDraftDefaultSnapshot firstSnapshot = agentMerchantDefaultService
+                .inheritIntoDraft(tenantId, rootUserId, firstKycVersionId, "127.0.0.1")
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(defaultV1.id(), firstSnapshot.agentDefaultVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(pricingV1.id(), firstSnapshot.defaults()
+                .products()
+                .get(0)
+                .pricingVersionId());
+
+            AgentPricingVersion pricingV2 = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, rootAgentId, "0.0110", "0.60", "0.50", LocalDateTime
+                    .of(2026, 8, 21, 12, 0), "default pricing v2"));
+            AgentMerchantDefaultVersion defaultV2 = agentMerchantDefaultService
+                .create(defaultCommand(tenantId, rootUserId, rootAgentId, pricingV2, LocalDateTime
+                    .of(2026, 8, 21, 13, 0), "publish merchant defaults v2"));
+
+            KycDraftDefaultSnapshot repeatedFirstSnapshot = agentMerchantDefaultService
+                .inheritIntoDraft(tenantId, rootUserId, firstKycVersionId, "127.0.0.1")
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(firstSnapshot.id(), repeatedFirstSnapshot.id());
+            org.junit.jupiter.api.Assertions.assertEquals(defaultV1.id(), repeatedFirstSnapshot
+                .agentDefaultVersionId());
+
+            insertKycDraft(secondKycVersionId, tenantId, merchantId, 2, LocalDateTime.of(2026, 8, 21, 14, 0));
+            KycDraftDefaultSnapshot secondSnapshot = agentMerchantDefaultService
+                .inheritIntoDraft(tenantId, rootUserId, secondKycVersionId, "127.0.0.1")
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(defaultV2.id(), secondSnapshot.agentDefaultVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(pricingV2.id(), secondSnapshot.defaults()
+                .products()
+                .get(0)
+                .pricingVersionId());
+
+            AgentPricingVersion childPricing = agentPricingService
+                .create(pricingCommand(tenantId, rootUserId, childAgentId, "0.0120", "0.75", "0.40", LocalDateTime
+                    .of(2026, 8, 20, 11, 0), "child pricing"));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(AgentPricingBoundaryException.class, () -> agentMerchantDefaultService
+                    .create(defaultCommand(tenantId, rootUserId, rootAgentId, childPricing, LocalDateTime
+                        .of(2026, 8, 21, 15, 0), "reject cross-agent pricing")));
+
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(defaultV2.id(), defaultV1
+                .id()), agentMerchantDefaultService.list(tenantId, rootUserId, rootAgentId)
+                    .stream()
+                    .map(AgentMerchantDefaultVersion::id)
+                    .toList());
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_agent_merchant_default_version SET default_payload_json = '{}' WHERE id = ?
+                """, defaultV1.id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_kyc_draft_default_snapshot WHERE id = ?
+                """, firstSnapshot.id()));
+
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND action = 'AGENT_MERCHANT_DEFAULT_VERSION_CREATE'
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND action = 'KYC_DRAFT_DEFAULTS_INHERIT'
+                """, Integer.class, tenantId));
+        });
+    }
+
+    protected void verifyConcurrentLegalSubjectUniqueness() throws Exception {
+        long tenantId = 913L;
+        long rootAgentId = 100301L;
+        long rootUserId = 100401L;
+        String legalSubjectHash = "a".repeat(64);
+        TenantUtils.execute(tenantId, () -> agentHierarchyService
+            .register(registration(rootAgentId, tenantId, 0L, rootUserId, "MERCHANT-UNIQUE-ROOT")));
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<String>> futures = List.of(executor
+                .submit(() -> registerConcurrentMerchant(ready, start, tenantId, rootUserId, rootAgentId, 100501L, 100511L, 100512L, "UNIQUE-M-1", legalSubjectHash
+                    .toUpperCase())), executor
+                        .submit(() -> registerConcurrentMerchant(ready, start, tenantId, rootUserId, rootAgentId, 100502L, 100521L, 100522L, "UNIQUE-M-2", legalSubjectHash)));
+            org.junit.jupiter.api.Assertions.assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            List<String> results = futures.stream().map(future -> {
+                try {
+                    return future.get(30, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    throw new IllegalStateException(ex);
+                }
+            }).sorted().toList();
+            org.junit.jupiter.api.Assertions.assertEquals(List.of("CREATED", "DUPLICATE"), results);
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_merchant
+                WHERE tenant_id = ? AND legal_subject_hash = ? AND deleted = 0
+                """, Integer.class, tenantId, legalSubjectHash));
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    protected void verifyMerchantProvisioningIsAtomic() {
+        long tenantId = 915L;
+        long parentDeptId = 101501L;
+        long rootUserId = 101502L;
+        long rootAgentId = 101503L;
+        TenantUtils.execute(tenantId, () -> {
+            LocalDateTime now = LocalDateTime.of(2026, 8, 21, 16, 0);
+            jdbcTemplate.update("""
+                INSERT INTO sys_dept
+                (id, name, parent_id, ancestors, sort, status, is_system, create_user, create_time, deleted)
+                VALUES (?, 'MERCHANT-ROOT-DEPT', 0, '0', 1, 1, ?, 1, ?, 0)
+                """, parentDeptId, false, now);
+            jdbcTemplate.update("""
+                INSERT INTO sys_user
+                (id, username, nickname, password, gender, status, is_system, pwd_reset_time, dept_id,
+                 create_user, create_time, deleted)
+                VALUES (?, 'merchant_root_915', 'MERCHANT-ROOT',
+                        '{bcrypt}$2a$10$xAsoeMJ.jc/kSxhviLAg7.j2iFrhi6yYAdniNdjLiIUWU/BRZl2Ti',
+                        0, 1, ?, ?, ?, 1, ?, 0)
+                """, rootUserId, false, now, parentDeptId, now);
+            agentHierarchyService
+                .register(new AgentRegistration(rootAgentId, tenantId, 0L, rootUserId, parentDeptId, "MERCHANT-ROOT-915", "MERCHANT ROOT", "Root Contact", null, null));
+
+            MerchantProvisioningResult result = merchantProvisioningService
+                .create(new MerchantCreateCommand(tenantId, rootUserId, rootAgentId, MerchantType.ENTERPRISE, "Synthetic Legal Subject", "Synthetic Merchant", "91350211M000100Y43", "Merchant Contact", "13800001234", "13900005678", "Technology", "Synthetic merchant provisioning", "OperatorPass915!", "ReviewerPass915!", "127.0.0.1"));
+
+            org.junit.jupiter.api.Assertions.assertNotEquals(result.operatorUserId(), result.reviewerUserId());
+            org.junit.jupiter.api.Assertions.assertNotEquals(result.operatorUsername(), result.reviewerUsername());
+            org.junit.jupiter.api.Assertions.assertTrue(result.operatorUsername().startsWith("mo_"));
+            org.junit.jupiter.api.Assertions.assertTrue(result.reviewerUsername().startsWith("mr_"));
+            org.junit.jupiter.api.Assertions.assertEquals(MerchantProvisioningService.PASSWORD_CHANGE_REQUIRED, result
+                .credentialStatus());
+            org.junit.jupiter.api.Assertions.assertTrue(java.util.Arrays.stream(result.getClass().getRecordComponents())
+                .noneMatch(component -> component.getName().toLowerCase().contains("password")));
+
+            Merchant merchant = merchantRepository.findById(tenantId, result.merchantId()).orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(rootAgentId, merchant.owningAgentId());
+            org.junit.jupiter.api.Assertions.assertEquals(result.operatorUserId(), merchant.operatorUserId());
+            org.junit.jupiter.api.Assertions.assertEquals(result.reviewerUserId(), merchant.reviewerUserId());
+            org.junit.jupiter.api.Assertions.assertEquals("138****1234", merchant.contactMobile().maskedValue());
+            org.junit.jupiter.api.Assertions.assertEquals("139****5678", merchant.reviewerMobile().maskedValue());
+            org.junit.jupiter.api.Assertions.assertEquals(64, merchant.legalSubjectHash().length());
+
+            String originalLegalName = merchant.legalName();
+            String originalLegalHash = merchant.legalSubjectHash();
+            var updatedProfile = merchantAdministrationService.updateProfile(tenantId, rootUserId, result
+                .merchantId(), "Updated Merchant", "Updated Contact", "", "", "Digital Services", "Updated ordinary profile", 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(1L, updatedProfile.rowVersion());
+            Merchant persistedProfile = merchantRepository.findById(tenantId, result.merchantId()).orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(originalLegalName, persistedProfile.legalName());
+            org.junit.jupiter.api.Assertions.assertEquals(originalLegalHash, persistedProfile.legalSubjectHash());
+            org.junit.jupiter.api.Assertions.assertEquals(rootAgentId, persistedProfile.owningAgentId());
+            org.junit.jupiter.api.Assertions.assertEquals("138****1234", persistedProfile.contactMobile()
+                .maskedValue());
+            org.junit.jupiter.api.Assertions.assertEquals("139****5678", persistedProfile.reviewerMobile()
+                .maskedValue());
+
+            Long targetAgentId = 101504L;
+            agentHierarchyService
+                .register(registration(targetAgentId, tenantId, rootAgentId, 101505L, "MERCHANT-TARGET-915"));
+            var identityRoute = merchantReverificationRoutingService.route(tenantId, rootUserId, result
+                .merchantId(), java.util.Set
+                    .of(MerchantReverificationChangeType.LEGAL_IDENTITY, MerchantReverificationChangeType.SETTLEMENT_ACCOUNT), null, "Update certified information", "127.0.0.1");
+            var ownershipRoute = merchantReverificationRoutingService.route(tenantId, rootUserId, result
+                .merchantId(), java.util.Set
+                    .of(MerchantReverificationChangeType.OWNERSHIP), targetAgentId, "Transfer ownership after review", "127.0.0.1");
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantReverificationRoutingService.BUSINESS_TYPE, identityRoute.businessType());
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantReverificationRoutingService.PROCESS_KEY, ownershipRoute.processDefinitionKey());
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_merchant_reverification_request
+                WHERE tenant_id = ? AND merchant_id = ? AND status = 'AWAITING_KYC_DRAFT'
+                  AND business_type = 'MERCHANT_REVERIFICATION'
+                  AND process_definition_key = 'merchant-onboarding-review-v1'
+                """, Integer.class, tenantId, result.merchantId()));
+            org.junit.jupiter.api.Assertions.assertEquals(targetAgentId, jdbcTemplate.queryForObject("""
+                SELECT target_agent_id FROM biz_merchant_reverification_request WHERE id = ?
+                """, Long.class, ownershipRoute.requestId()));
+            String routeMetadata = jdbcTemplate.queryForObject("""
+                SELECT CONCAT(change_types_json, ' ', reason) FROM biz_merchant_reverification_request WHERE id = ?
+                """, String.class, identityRoute.requestId());
+            org.junit.jupiter.api.Assertions.assertFalse(routeMetadata.contains("91350211M000100Y43"));
+            org.junit.jupiter.api.Assertions.assertFalse(routeMetadata.contains("13800001234"));
+
+            assertMerchantUser(result.operatorUserId(), parentDeptId, "OperatorPass915!", "MERCHANT_OPERATOR");
+            assertMerchantUser(result.reviewerUserId(), parentDeptId, "ReviewerPass915!", "MERCHANT_REVIEWER");
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'MERCHANT_CREATE'
+                """, Integer.class, tenantId, result.merchantId()));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'MERCHANT_PROFILE_UPDATE'
+                """, Integer.class, tenantId, result.merchantId()));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND action = 'MERCHANT_REVERIFICATION_ROUTE'
+                """, Integer.class, tenantId));
+
+            var disabledMerchant = merchantAdministrationService.changeLifecycle(tenantId, rootUserId, result
+                .merchantId(), MerchantStatus.DISABLED, "authorized merchant disable", 1L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(2L, disabledMerchant.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT status FROM sys_user WHERE id = ?
+                """, Integer.class, result.operatorUserId()));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT status FROM sys_user WHERE id = ?
+                """, Integer.class, result.reviewerUserId()));
+            for (MerchantOperation operation : MerchantOperation.values()) {
+                org.junit.jupiter.api.Assertions
+                    .assertThrows(MerchantDomainException.class, () -> merchantOperationPolicyService
+                        .requireAllowed(tenantId, result.merchantId(), operation));
+            }
+            org.mockito.Mockito.verify(onlineUserService).kickOut(result.operatorUserId());
+            org.mockito.Mockito.verify(onlineUserService).kickOut(result.reviewerUserId());
+
+            var enabledMerchant = merchantAdministrationService.changeLifecycle(tenantId, rootUserId, result
+                .merchantId(), MerchantStatus.ENABLED, "authorized merchant enable", 2L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(3L, enabledMerchant.rowVersion());
+            merchantOperationPolicyService.requireAllowed(tenantId, result
+                .merchantId(), MerchantOperation.NEW_ONBOARDING);
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT status FROM sys_user WHERE id = ?
+                """, Integer.class, result.operatorUserId()));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'MERCHANT_LIFECYCLE_CHANGE'
+                """, Integer.class, tenantId, result.merchantId()));
+
+            Integer userCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sys_user
+                WHERE description LIKE 'Merchant % requires first-login password change'
+                """, Integer.class);
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantDuplicateLegalSubjectException.class, () -> merchantProvisioningService
+                    .create(new MerchantCreateCommand(tenantId, rootUserId, rootAgentId, MerchantType.ENTERPRISE, "Duplicate Legal Subject", "Duplicate Merchant", "91350211m000100y43", "Duplicate Contact", "13700001234", "13600005678", "Technology", "Duplicate merchant", "OperatorPass916!", "ReviewerPass916!", "127.0.0.1")));
+            org.junit.jupiter.api.Assertions.assertEquals(userCount, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sys_user
+                WHERE description LIKE 'Merchant % requires first-login password change'
+                """, Integer.class));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_merchant WHERE tenant_id = ? AND deleted = 0
+                """, Integer.class, tenantId));
+        });
+    }
+
+    private void assertMerchantUser(Long userId, Long deptId, String password, String roleCode) {
+        org.junit.jupiter.api.Assertions.assertEquals(deptId, jdbcTemplate.queryForObject("""
+            SELECT dept_id FROM sys_user WHERE id = ?
+            """, Long.class, userId));
+        org.junit.jupiter.api.Assertions.assertNull(jdbcTemplate.queryForObject("""
+            SELECT phone FROM sys_user WHERE id = ?
+            """, String.class, userId));
+        org.junit.jupiter.api.Assertions.assertTrue(jdbcTemplate.queryForObject("""
+            SELECT must_change_password FROM sys_user WHERE id = ?
+            """, Boolean.class, userId));
+        String storedPassword = jdbcTemplate
+            .queryForObject("SELECT password FROM sys_user WHERE id = ?", String.class, userId);
+        org.junit.jupiter.api.Assertions.assertTrue(passwordEncoder.matches(password, storedPassword));
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM sys_user_role ur
+            JOIN sys_role r ON r.id = ur.role_id AND r.deleted = 0
+            WHERE ur.user_id = ? AND r.code = ?
+            """, Integer.class, userId, roleCode));
+    }
+
+    private String registerConcurrentMerchant(CountDownLatch ready,
+                                              CountDownLatch start,
+                                              Long tenantId,
+                                              Long actorUserId,
+                                              Long owningAgentId,
+                                              Long merchantId,
+                                              Long operatorUserId,
+                                              Long reviewerUserId,
+                                              String merchantNo,
+                                              String legalSubjectHash) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        try {
+            TenantUtils.execute(tenantId, () -> merchantMasterService
+                .register(actorUserId, merchantRegistration(merchantId, tenantId, owningAgentId, operatorUserId, reviewerUserId, merchantNo, legalSubjectHash)));
+            return "CREATED";
+        } catch (MerchantDuplicateLegalSubjectException ex) {
+            return "DUPLICATE";
+        }
+    }
+
+    private AgentMerchantDefaultCreateCommand defaultCommand(Long tenantId,
+                                                             Long actorUserId,
+                                                             Long agentId,
+                                                             AgentPricingVersion pricing,
+                                                             LocalDateTime effectiveTime,
+                                                             String reason) {
+        return new AgentMerchantDefaultCreateCommand(tenantId, actorUserId, agentId, List
+            .of(new AgentMerchantDefaultProduct(pricing.channelCode(), pricing.productCode(), pricing
+                .id())), effectiveTime, null, reason, "127.0.0.1");
+    }
+
+    private void insertKycDraft(Long kycVersionId,
+                                Long tenantId,
+                                Long merchantId,
+                                Integer versionNo,
+                                LocalDateTime createTime) {
+        jdbcTemplate.update("""
+            INSERT INTO biz_kyc_version
+            (id, tenant_id, merchant_id, version_no, requirement_version, status, saved_step, legal_name,
+             row_version, create_time, deleted)
+            VALUES (?, ?, ?, ?, 'REQ-DEFAULTS-1', 'DRAFT', 1, 'Defaults Merchant', 0, ?, 0)
+            """, kycVersionId, tenantId, merchantId, versionNo, createTime);
+    }
+
+    private AgentPricingCreateCommand pricingCommand(Long tenantId,
+                                                     Long actorUserId,
+                                                     Long agentId,
+                                                     String percentageCost,
+                                                     String fixedFee,
+                                                     String profitShareRatio,
+                                                     LocalDateTime effectiveTime,
+                                                     String reason) {
+        return new AgentPricingCreateCommand(tenantId, actorUserId, agentId, "CHANNEL-A", "PRODUCT-A", "CNY", new AgentPricingRules(new BigDecimal(percentageCost), new BigDecimal(fixedFee), new BigDecimal(profitShareRatio)), effectiveTime, null, reason, "127.0.0.1");
     }
 
     private AgentRegistration registration(Long id, Long tenantId, Long parentId, Long userId, String agentNo) {

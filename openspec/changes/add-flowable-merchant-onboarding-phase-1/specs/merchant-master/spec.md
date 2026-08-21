@@ -55,7 +55,8 @@ The system SHALL lock ownership and certified identity fields according to lifec
 #### Scenario: Change certified legal identity
 - **GIVEN** a merchant has an approved channel onboarding
 - **WHEN** an operator requests a legal identity change
-- **THEN** the ordinary update endpoint refuses direct overwrite and creates or requires a controlled re-verification request
+- **THEN** the ordinary update endpoint refuses direct overwrite and creates a `MERCHANT_REVERIFICATION` request that
+  reuses `merchant-onboarding-review-v1` without storing raw certified values in the request or workflow variables
 
 ### Requirement: Merchant lifecycle controls downstream operations
 **Trace ID:** FR-MER-007

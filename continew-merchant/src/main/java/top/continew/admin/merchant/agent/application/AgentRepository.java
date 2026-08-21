@@ -28,17 +28,23 @@ public interface AgentRepository {
 
     Optional<Agent> findByUserId(Long tenantId, Long userId);
 
+    Optional<Agent> findByPromotionCode(Long tenantId, String promotionCode);
+
     boolean existsById(Long tenantId, Long agentId);
 
     boolean existsByAgentNo(Long tenantId, String agentNo);
 
     boolean existsByUserId(Long tenantId, Long userId);
 
+    boolean existsByPromotionCode(Long tenantId, String promotionCode);
+
     AgentPage page(Long tenantId, List<Long> authorizedAgentIds, AgentListQuery query);
 
     boolean bindDepartment(Long tenantId, Long agentId, Long deptId);
 
     boolean updateProfile(Agent agent, Long expectedVersion);
+
+    boolean updatePromotionCode(Agent agent, Long expectedVersion);
 
     void insert(Agent agent);
 

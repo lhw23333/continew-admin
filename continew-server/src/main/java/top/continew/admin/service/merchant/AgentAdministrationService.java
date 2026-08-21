@@ -72,7 +72,7 @@ public class AgentAdministrationService {
             throw new AgentConcurrentModificationException();
         }
         EncryptedMobileNumber mobile = contactMobile == null || contactMobile.isBlank()
-            ? null
+            ? current.contactMobile()
             : EncryptedMobileNumber.fromPlaintext(contactMobile, sensitiveValueProtector);
         Agent changed = current.updateProfile(name, contactName, mobile, remarks, LocalDateTime.now(clock));
         transactionTemplate.executeWithoutResult(status -> {

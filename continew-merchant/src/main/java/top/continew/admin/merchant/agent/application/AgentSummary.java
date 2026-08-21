@@ -17,6 +17,7 @@
 package top.continew.admin.merchant.agent.application;
 
 import top.continew.admin.merchant.agent.domain.Agent;
+import top.continew.admin.merchant.agent.domain.AgentPromotionCodeStatus;
 import top.continew.admin.merchant.agent.domain.AgentStatus;
 
 import java.time.LocalDateTime;
@@ -24,11 +25,13 @@ import java.time.LocalDateTime;
 /** Masked agent list/detail view. */
 public record AgentSummary(Long id, Long parentId, Long deptId, String agentNo, String name, String contactName,
                            String contactMobileMasked, String remarks, AgentStatus status, Long rowVersion,
-                           LocalDateTime createTime, LocalDateTime updateTime) {
+                           String promotionCode, AgentPromotionCodeStatus promotionCodeStatus, LocalDateTime createTime,
+                           LocalDateTime updateTime) {
 
     public static AgentSummary from(Agent agent) {
         return new AgentSummary(agent.id(), agent.parentId(), agent.deptId(), agent.agentNo(), agent.name(), agent
             .contactName(), agent.contactMobile() == null ? null : agent.contactMobile().maskedValue(), agent
-                .remarks(), agent.status(), agent.rowVersion(), agent.createTime(), agent.updateTime());
+                .remarks(), agent.status(), agent.rowVersion(), agent.promotionCode(), agent
+                    .promotionCodeStatus(), agent.createTime(), agent.updateTime());
     }
 }

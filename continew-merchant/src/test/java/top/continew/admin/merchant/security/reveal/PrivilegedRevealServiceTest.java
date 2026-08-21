@@ -203,8 +203,18 @@ class PrivilegedRevealServiceTest {
         }
 
         @Override
+        public boolean existsByLegalSubjectHash(Long tenantId, String legalSubjectHash) {
+            return false;
+        }
+
+        @Override
         public void insert(Merchant merchant) {
             merchants.put(merchant.id(), merchant);
+        }
+
+        @Override
+        public boolean updateProfile(Merchant merchant, Long expectedVersion) {
+            return false;
         }
 
         @Override
@@ -240,6 +250,11 @@ class PrivilegedRevealServiceTest {
         }
 
         @Override
+        public Optional<Agent> findByPromotionCode(Long tenantId, String promotionCode) {
+            return Optional.empty();
+        }
+
+        @Override
         public boolean existsById(Long tenantId, Long agentId) {
             return false;
         }
@@ -251,6 +266,11 @@ class PrivilegedRevealServiceTest {
 
         @Override
         public boolean existsByUserId(Long tenantId, Long userId) {
+            return false;
+        }
+
+        @Override
+        public boolean existsByPromotionCode(Long tenantId, String promotionCode) {
             return false;
         }
 
@@ -268,6 +288,11 @@ class PrivilegedRevealServiceTest {
 
         @Override
         public boolean updateProfile(Agent agent, Long expectedVersion) {
+            return false;
+        }
+
+        @Override
+        public boolean updatePromotionCode(Agent agent, Long expectedVersion) {
             return false;
         }
 

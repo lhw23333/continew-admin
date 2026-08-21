@@ -108,7 +108,6 @@ public class AgentAdministrationController {
         @Size(max = 100)
         private String contactName;
 
-        @NotBlank
         @Mobile
         private String contactMobile;
 

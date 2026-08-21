@@ -40,6 +40,11 @@ public class MerchantDO extends TenantBaseDO {
     private String legalSubjectHash;
     private Long operatorUserId;
     private Long reviewerUserId;
+    private byte[] reviewerMobileCiphertext;
+    private String reviewerMobileHash;
+    private String reviewerMobileHashKeyVersion;
+    private String reviewerMobileMasked;
+    private String reviewerMobileKeyVersion;
     private String contactName;
     private byte[] contactMobileCiphertext;
     private String contactMobileHash;

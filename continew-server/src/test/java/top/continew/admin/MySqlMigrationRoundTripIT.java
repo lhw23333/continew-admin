@@ -27,7 +27,8 @@ import javax.sql.DataSource;
 class MySqlMigrationRoundTripIT extends AbstractMigrationRoundTripIT {
 
     @Container
-    private static final MySQLContainer<?> DATABASE = new MySQLContainer<>("mysql:8.4.0");
+    private static final MySQLContainer<?> DATABASE = new MySQLContainer<>("mysql:8.4.0")
+        .withCommand("--log-bin-trust-function-creators=1");
 
     @Override
     protected DataSource createDataSource() {

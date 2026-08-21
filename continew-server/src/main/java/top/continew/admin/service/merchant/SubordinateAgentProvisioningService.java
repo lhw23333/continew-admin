@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import top.continew.admin.common.enums.DisEnableStatusEnum;
 import top.continew.admin.common.enums.GenderEnum;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
+import top.continew.admin.merchant.agent.application.AgentPromotionCodeService;
 import top.continew.admin.merchant.agent.application.AgentRepository;
 import top.continew.admin.merchant.agent.domain.Agent;
 import top.continew.admin.merchant.agent.domain.AgentAccessDeniedException;
@@ -59,6 +60,7 @@ public class SubordinateAgentProvisioningService {
     private final UserRoleMapper userRoleMapper;
     private final IdentifierGenerator identifierGenerator;
     private final SensitiveValueProtector sensitiveValueProtector;
+    private final AgentPromotionCodeService promotionCodeService;
 
     @Transactional(rollbackFor = Exception.class)
     public SubordinateAgentProvisioningResult create(SubordinateAgentCreateCommand command) {
@@ -89,9 +91,10 @@ public class SubordinateAgentProvisioningService {
 
         EncryptedMobileNumber encryptedMobile = EncryptedMobileNumber.fromPlaintext(command
             .contactMobile(), sensitiveValueProtector);
+        String promotionCode = promotionCodeService.generateUniqueCodeForProvisioning(command.tenantId());
         Agent agent = agentHierarchyService.register(new AgentRegistration(agentId, command.tenantId(), parentAgent
             .id(), user.getId(), department.getId(), command.agentNo(), command.name(), command
-                .contactName(), encryptedMobile, null));
+                .contactName(), encryptedMobile, promotionCode));
         return new SubordinateAgentProvisioningResult(agent.id(), user.getId(), department
             .getId(), username, PASSWORD_CHANGE_REQUIRED);
     }

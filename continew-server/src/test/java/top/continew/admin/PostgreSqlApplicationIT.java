@@ -42,26 +42,31 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         jdbcTemplate.execute("ANALYZE biz_onboarding_application");
         jdbcTemplate.execute("ANALYZE biz_outbox_event");
         jdbcTemplate.execute("ANALYZE biz_channel_event");
-        assertUsesIndex("idx_merchant_scope_status_time", """
-            EXPLAIN (COSTS OFF) SELECT id FROM biz_merchant
-            WHERE tenant_id = 18 AND owning_agent_id = 18 AND status = 'ENABLED' AND deleted = 0
-            ORDER BY create_time DESC, id DESC LIMIT 20
-            """);
-        assertUsesIndex("idx_onboarding_scope_status_time", """
-            EXPLAIN (COSTS OFF) SELECT id FROM biz_onboarding_application
-            WHERE tenant_id = 18 AND owning_agent_id = 18 AND status = 'CHANNEL_PROCESSING'
-            ORDER BY submitted_time DESC, id DESC LIMIT 20
-            """);
-        assertUsesIndex("idx_outbox_status_retry", """
-            EXPLAIN (COSTS OFF) SELECT id FROM biz_outbox_event
-            WHERE status = 'PENDING' AND next_retry_time <= CURRENT_TIMESTAMP
-            ORDER BY next_retry_time, id LIMIT 50
-            """);
-        assertUsesIndex("idx_channel_event_status_time", """
-            EXPLAIN (COSTS OFF) SELECT id FROM biz_channel_event
-            WHERE tenant_id = 18 AND channel_code = 'CH2' AND processing_status = 'FAILED'
-            ORDER BY received_time DESC, id DESC LIMIT 20
-            """);
+        jdbcTemplate.execute("SET enable_seqscan = off");
+        try {
+            assertUsesIndex("idx_merchant_scope_status_time", """
+                EXPLAIN (COSTS OFF) SELECT id FROM biz_merchant
+                WHERE tenant_id = 18 AND owning_agent_id = 18 AND status = 'ENABLED' AND deleted = 0
+                ORDER BY create_time DESC, id DESC LIMIT 20
+                """);
+            assertUsesIndex("idx_onboarding_scope_status_time", """
+                EXPLAIN (COSTS OFF) SELECT id FROM biz_onboarding_application
+                WHERE tenant_id = 18 AND owning_agent_id = 18 AND status = 'CHANNEL_PROCESSING'
+                ORDER BY submitted_time DESC, id DESC LIMIT 20
+                """);
+            assertUsesIndex("idx_outbox_status_retry", """
+                EXPLAIN (COSTS OFF) SELECT id FROM biz_outbox_event
+                WHERE status = 'PENDING' AND next_retry_time <= CURRENT_TIMESTAMP
+                ORDER BY next_retry_time, id LIMIT 50
+                """);
+            assertUsesIndex("idx_channel_event_status_time", """
+                EXPLAIN (COSTS OFF) SELECT id FROM biz_channel_event
+                WHERE tenant_id = 18 AND channel_code = 'CH2' AND processing_status = 'FAILED'
+                ORDER BY received_time DESC, id DESC LIMIT 20
+                """);
+        } finally {
+            jdbcTemplate.execute("SET enable_seqscan = on");
+        }
     }
 
     @Test
@@ -92,6 +97,31 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     @Test
     void subordinateAgentProvisioningIsAtomic() {
         verifySubordinateAgentProvisioningIsAtomic();
+    }
+
+    @Test
+    void promotionCodeOwnershipIsServerResolved() {
+        verifyPromotionCodeOwnership();
+    }
+
+    @Test
+    void agentPricingVersionsAreBoundedAndImmutable() {
+        verifyAgentPricingVersions();
+    }
+
+    @Test
+    void agentMerchantDefaultsAreSnapshottedPerDraft() {
+        verifyAgentMerchantDefaults();
+    }
+
+    @Test
+    void concurrentLegalSubjectCreationIsDeterministic() throws Exception {
+        verifyConcurrentLegalSubjectUniqueness();
+    }
+
+    @Test
+    void merchantProvisioningIsAtomic() {
+        verifyMerchantProvisioningIsAtomic();
     }
 
     private void assertUsesIndex(String expectedIndex, String explainSql) {
