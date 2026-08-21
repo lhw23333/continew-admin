@@ -20,6 +20,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/merchant-identity.sql
   - include:
+      file: db/changelog/postgresql/merchant/merchant-management-menu.sql
+  - include:
       file: db/changelog/postgresql/merchant/merchant-reverification.sql
   - include:
       file: db/changelog/postgresql/merchant/sensitive-key-versions.sql

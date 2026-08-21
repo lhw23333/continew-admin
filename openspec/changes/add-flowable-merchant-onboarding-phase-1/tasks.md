@@ -65,7 +65,7 @@
 - [x] 6.4 Implement atomic merchant creation with distinct generated operator/reviewer identities and required field validation
 - [x] 6.5 Implement ordinary profile edit rules and controlled re-verification routing for certified identity, ownership, and settlement-account changes
 - [x] 6.6 Implement merchant enable/disable with reason, downstream-operation policy, session impact, and immutable audit
-- [ ] 6.7 Implement Vue merchant filters, list, create/edit forms, channel summary, lifecycle action confirmation, and responsive validation
+- [x] 6.7 Implement Vue merchant filters, list, create/edit forms, channel summary, lifecycle action confirmation, and responsive validation
 
 ## 7. Versioned Five-Step Onboarding
 

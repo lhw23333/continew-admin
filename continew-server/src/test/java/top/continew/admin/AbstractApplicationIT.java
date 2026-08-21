@@ -987,6 +987,9 @@ abstract class AbstractApplicationIT {
 
             assertMerchantUser(result.operatorUserId(), parentDeptId, "OperatorPass915!", "MERCHANT_OPERATOR");
             assertMerchantUser(result.reviewerUserId(), parentDeptId, "ReviewerPass915!", "MERCHANT_REVIEWER");
+            org.junit.jupiter.api.Assertions.assertEquals(8, countMerchantManagementMenus("AGENT_ADMIN"));
+            org.junit.jupiter.api.Assertions.assertEquals(5, countMerchantManagementMenus("MERCHANT_OPERATOR"));
+            org.junit.jupiter.api.Assertions.assertEquals(4, countMerchantManagementMenus("MERCHANT_REVIEWER"));
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM biz_security_audit
                 WHERE tenant_id = ? AND object_id = ? AND action = 'MERCHANT_CREATE'
@@ -1265,6 +1268,18 @@ abstract class AbstractApplicationIT {
             JOIN sys_role r ON r.id = ur.role_id AND r.deleted = 0
             WHERE ur.user_id = ? AND r.code = ?
             """, Integer.class, userId, roleCode));
+    }
+
+    private Integer countMerchantManagementMenus(String roleCode) {
+        return jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM sys_role_menu role_menu
+            JOIN sys_role role_data ON role_data.id = role_menu.role_id AND role_data.deleted = 0
+            WHERE role_data.code = ?
+              AND role_menu.menu_id IN (
+                690000000000100000, 690000000000100200, 690000000000100201, 690000000000100202,
+                690000000000100203, 690000000000100204, 690000000000100205, 690000000000100206
+              )
+            """, Integer.class, roleCode);
     }
 
     private String registerConcurrentMerchant(CountDownLatch ready,
