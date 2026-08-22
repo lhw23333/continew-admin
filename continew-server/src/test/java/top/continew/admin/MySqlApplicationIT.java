@@ -179,7 +179,7 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
-    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() {
+    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() throws Exception {
         verifyWorkflowAdapterCommandsAndQueries();
     }
 

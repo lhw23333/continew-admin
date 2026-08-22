@@ -17,14 +17,14 @@
 package top.continew.admin.workflow.internal.flowable;
 
 import org.flowable.common.engine.api.FlowableException;
+import org.flowable.common.engine.api.lock.LockManager;
 import org.flowable.engine.HistoryService;
+import org.flowable.engine.ManagementService;
 import org.flowable.engine.RepositoryService;
-import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
-import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.task.api.Task;
 import org.flowable.task.api.TaskQuery;
 import org.flowable.task.api.history.HistoricTaskInstance;
@@ -45,6 +45,10 @@ import top.continew.admin.workflow.dto.WorkflowTask;
 import top.continew.admin.workflow.query.WorkflowDoneQuery;
 import top.continew.admin.workflow.query.WorkflowTaskQuery;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
@@ -64,36 +68,42 @@ public class FlowableWorkflowService implements WorkflowService {
     private static final Pattern GROUP_CODE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9:._-]{0,63}");
     private static final ZoneId DATABASE_ZONE = ZoneId.systemDefault();
 
-    private final RuntimeService runtimeService;
     private final TaskService taskService;
     private final HistoryService historyService;
     private final RepositoryService repositoryService;
+    private final ManagementService managementService;
     private final WorkflowVariablePolicy variablePolicy;
+    private final FlowableWorkflowStartTransaction startTransaction;
 
-    public FlowableWorkflowService(RuntimeService runtimeService,
-                                   TaskService taskService,
+    public FlowableWorkflowService(TaskService taskService,
                                    HistoryService historyService,
                                    RepositoryService repositoryService,
-                                   WorkflowVariablePolicy variablePolicy) {
-        this.runtimeService = runtimeService;
+                                   ManagementService managementService,
+                                   WorkflowVariablePolicy variablePolicy,
+                                   FlowableWorkflowStartTransaction startTransaction) {
         this.taskService = taskService;
         this.historyService = historyService;
         this.repositoryService = repositoryService;
+        this.managementService = managementService;
         this.variablePolicy = variablePolicy;
+        this.startTransaction = startTransaction;
     }
 
     @Override
     public WorkflowRef start(StartWorkflowCommand command) {
         Long tenantId = positive(command.tenantId());
         String processKey = required(command.processDefinitionKey(), PROCESS_KEY);
-        String businessKey = required(command.businessKey(), BUSINESS_KEY);
+        WorkflowBusinessKey businessKey = WorkflowBusinessKey.parse(tenantId, command.businessKey());
         Map<String, Object> variables = variablePolicy.validateAndCopy(command.variables());
+        if (variables.containsKey("tenantId") && !tenantId.equals(variables.get("tenantId"))) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.INVALID_REQUEST);
+        }
+        LockManager lockManager = managementService.getLockManager(lockName(businessKey));
         try {
-            ProcessInstance instance = runtimeService
-                .startProcessInstanceByKeyAndTenantId(processKey, businessKey, variables, tenant(tenantId));
-            ProcessDefinition definition = requireDefinition(instance.getProcessDefinitionId());
-            return new WorkflowRef(instance.getProcessInstanceId(), businessKey, definition.getId(), definition
-                .getKey(), definition.getVersion(), tenant(tenantId));
+            return lockManager.waitForLockRunAndRelease(Duration.ofSeconds(30), () -> startTransaction
+                .startOrExisting(businessKey, processKey, variables));
+        } catch (WorkflowOperationException ex) {
+            throw ex;
         } catch (FlowableException ex) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.ENGINE_FAILURE);
         }
@@ -362,6 +372,16 @@ public class FlowableWorkflowService implements WorkflowService {
 
     private boolean text(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String lockName(WorkflowBusinessKey businessKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest((businessKey.tenantId() + ":" + businessKey.value()).getBytes(StandardCharsets.UTF_8));
+            return "WF_START_" + (Byte.toUnsignedInt(digest[0]) & 63);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.ENGINE_FAILURE);
+        }
     }
 
     private LocalDateTime time(Date value) {

@@ -133,12 +133,14 @@ import top.continew.admin.workflow.internal.flowable.FlowableJobMonitor;
 import top.continew.admin.workflow.internal.flowable.FlowableJobSnapshot;
 import top.continew.admin.workflow.api.InvalidWorkflowVariableException;
 import top.continew.admin.workflow.api.WorkflowOperationException;
+import top.continew.admin.workflow.api.WorkflowMappingService;
 import top.continew.admin.workflow.api.WorkflowService;
 import top.continew.admin.workflow.command.ClaimTaskCommand;
 import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
 import top.continew.admin.workflow.dto.WorkflowPage;
+import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
 import top.continew.admin.workflow.dto.WorkflowProcessHistory;
 import top.continew.admin.workflow.dto.WorkflowRef;
 import top.continew.admin.workflow.dto.WorkflowTask;
@@ -175,6 +177,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private WorkflowService workflowService;
+
+    @Autowired
+    private WorkflowMappingService workflowMappingService;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -336,7 +341,7 @@ abstract class AbstractApplicationIT {
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.history").gauge());
     }
 
-    protected void verifyWorkflowAdapterCommandsAndQueries() {
+    protected void verifyWorkflowAdapterCommandsAndQueries() throws Exception {
         long tenantId = 931L;
         long reviewerUserId = 93111L;
         String processKey = "workflow-adapter-test-v1";
@@ -366,11 +371,47 @@ abstract class AbstractApplicationIT {
         try {
             Map<String, Object> variables = Map
                 .of("tenantId", tenantId, "merchantId", 93101L, "applicationId", 93102L, "kycVersion", 1L, "channelCode", "SYNTHETIC", "applicantId", 93103L, "owningAgentId", 93104L, "riskLevel", "LOW", "requiresSupplement", Boolean.FALSE);
-            WorkflowRef started = workflowService
-                .start(new StartWorkflowCommand(tenantId, processKey, businessKey, variables));
+            StartWorkflowCommand startCommand = new StartWorkflowCommand(tenantId, processKey, businessKey, variables);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            List<WorkflowRef> concurrentStarts;
+            try {
+                List<Future<WorkflowRef>> futures = List.of(executor
+                    .submit(() -> startWorkflowConcurrently(ready, start, startCommand)), executor
+                        .submit(() -> startWorkflowConcurrently(ready, start, startCommand)));
+                org.junit.jupiter.api.Assertions.assertTrue(ready.await(10, TimeUnit.SECONDS));
+                start.countDown();
+                concurrentStarts = futures.stream().map(future -> {
+                    try {
+                        return future.get(30, TimeUnit.SECONDS);
+                    } catch (Exception ex) {
+                        throw new AssertionError(ex);
+                    }
+                }).toList();
+            } finally {
+                executor.shutdownNow();
+            }
+            WorkflowRef started = concurrentStarts.get(0);
+            org.junit.jupiter.api.Assertions.assertEquals(started.processInstanceId(), concurrentStarts.get(1)
+                .processInstanceId());
+            org.junit.jupiter.api.Assertions.assertEquals(started.mappingId(), concurrentStarts.get(1).mappingId());
             org.junit.jupiter.api.Assertions.assertEquals(processKey, started.processDefinitionKey());
             org.junit.jupiter.api.Assertions.assertEquals(1, started.processDefinitionVersion());
             org.junit.jupiter.api.Assertions.assertEquals(String.valueOf(tenantId), started.tenantId());
+            WorkflowInstanceMapping mapping = workflowMappingService.findByBusinessKey(tenantId, businessKey)
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(started.mappingId(), mapping.mappingId());
+            org.junit.jupiter.api.Assertions.assertEquals(started.processInstanceId(), mapping.processInstanceId());
+            org.junit.jupiter.api.Assertions.assertEquals(mapping, workflowMappingService
+                .findByProcessInstanceId(tenantId, started.processInstanceId())
+                .orElseThrow());
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ? AND business_key = ?", Integer.class, tenantId, businessKey));
+            org.junit.jupiter.api.Assertions.assertEquals(1, processEngine.getRuntimeService()
+                .createProcessInstanceQuery()
+                .processInstanceBusinessKey(businessKey)
+                .count());
 
             WorkflowPage<WorkflowTask> todo = workflowService
                 .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, Set
@@ -435,7 +476,7 @@ abstract class AbstractApplicationIT {
                 .processDefinitionKey(processKey)
                 .count();
             org.junit.jupiter.api.Assertions.assertThrows(InvalidWorkflowVariableException.class, () -> workflowService
-                .start(new StartWorkflowCommand(tenantId, processKey, businessKey + ":invalid", Map
+                .start(new StartWorkflowCommand(tenantId, processKey, "931:WORKFLOW_ADAPTER:93101:2", Map
                     .of("identityNumber", "110101199001011234"))));
             org.junit.jupiter.api.Assertions.assertEquals(historicCount, processEngine.getHistoryService()
                 .createHistoricProcessInstanceQuery()
@@ -444,6 +485,14 @@ abstract class AbstractApplicationIT {
         } finally {
             processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
         }
+    }
+
+    private WorkflowRef startWorkflowConcurrently(CountDownLatch ready,
+                                                  CountDownLatch start,
+                                                  StartWorkflowCommand command) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        return workflowService.start(command);
     }
 
     protected void seedRepresentativeQueryData() {

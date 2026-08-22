@@ -19,6 +19,7 @@ package top.continew.admin.workflow.dto;
 /**
  * Engine-neutral reference returned by workflow commands.
  *
+ * @param mappingId                durable project-owned mapping identifier
  * @param processInstanceId        process instance identifier
  * @param businessKey              stable business key
  * @param processDefinitionId      deployed definition identifier
@@ -26,6 +27,6 @@ package top.continew.admin.workflow.dto;
  * @param processDefinitionVersion deployed definition version
  * @param tenantId                 Flowable tenant identifier mapped from ContiNew tenant ID
  */
-public record WorkflowRef(String processInstanceId, String businessKey, String processDefinitionId,
+public record WorkflowRef(Long mappingId, String processInstanceId, String businessKey, String processDefinitionId,
                           String processDefinitionKey, Integer processDefinitionVersion, String tenantId) {
 }

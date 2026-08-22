@@ -16,21 +16,14 @@
 
 package top.continew.admin.workflow.api;
 
-/** Sanitized workflow operation failure without Flowable exception messages or variable contents. */
-public final class WorkflowOperationException extends RuntimeException {
+import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
 
-    private final Code code;
+import java.util.Optional;
 
-    public WorkflowOperationException(Code code) {
-        super("Workflow operation failed: " + code.name());
-        this.code = code;
-    }
+/** Reads project-owned business-to-process mappings without exposing Flowable entities. */
+public interface WorkflowMappingService {
 
-    public Code code() {
-        return code;
-    }
+    Optional<WorkflowInstanceMapping> findByBusinessKey(Long tenantId, String businessKey);
 
-    public enum Code {
-        INVALID_REQUEST, NOT_FOUND, TENANT_MISMATCH, NOT_ASSIGNED, ALREADY_CLAIMED, MAPPING_CONFLICT, ENGINE_FAILURE
-    }
+    Optional<WorkflowInstanceMapping> findByProcessInstanceId(Long tenantId, String processInstanceId);
 }

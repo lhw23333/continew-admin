@@ -185,7 +185,7 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
-    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() {
+    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() throws Exception {
         verifyWorkflowAdapterCommandsAndQueries();
     }
 
