@@ -364,12 +364,41 @@ cosid:
 flowable:
   # 生产和普通开发环境禁止自动修改表结构，统一由 Liquibase 管理
   database-schema-update: false
+  # AUDIT 保留流程、任务、变量最终值和业务版本引用；避免 FULL 级别的无必要明细膨胀
+  history-level: audit
+  # 异步任务由 Flowable executor 持久化执行；一期历史记录仍同步写入
+  async-executor-activate: true
+  async-history-executor-activate: false
   # ContiNew 用户/角色是唯一身份源，不启动 Flowable IDM
   idm:
     enabled: false
   # 一期不使用 Event Registry，避免引入无业务用途的引擎和表
   eventregistry:
     enabled: false
+
+workflow:
+  flowable:
+    # 采用已由 Liquibase 管理的 Flowable 默认 ACT_/FLW_ 表前缀，不配置额外动态前缀
+    schema-strategy: DEFAULT_ACT_FLW_PREFIXES
+    async-executor:
+      core-pool-size: 4
+      max-pool-size: 16
+      queue-size: 256
+      keep-alive: 60s
+      shutdown-wait: 30s
+      retries: 3
+      max-async-jobs-per-acquisition: 8
+      max-timer-jobs-per-acquisition: 8
+      async-job-acquire-wait: 10s
+      timer-job-acquire-wait: 10s
+      queue-full-wait: 5s
+      async-job-lock-time: 5m
+      timer-job-lock-time: 5m
+      reset-expired-jobs-interval: 60s
+      reset-expired-jobs-page-size: 100
+    monitoring:
+      cache-ttl: 5s
+      dead-letter-degraded-threshold: 0
 
 --- ### 认证配置
 auth:

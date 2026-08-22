@@ -281,3 +281,15 @@ snail-job:
       username: ${SCHEDULE_USERNAME:}
       # 密码
       password: ${SCHEDULE_PASSWORD:}
+
+--- ### Flowable 生产安全策略
+flowable:
+  # 禁止生产运行时自动创建、升级或删除 Flowable 表；仅允许 Liquibase 迁移
+  database-schema-update: false
+  history-level: audit
+  async-executor-activate: true
+  async-history-executor-activate: false
+  idm:
+    enabled: false
+  eventregistry:
+    enabled: false

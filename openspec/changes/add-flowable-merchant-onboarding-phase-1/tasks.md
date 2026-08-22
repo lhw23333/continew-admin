@@ -79,12 +79,19 @@
 - [x] 7.8 Implement multiple operating-platform records and independently versioned proof attachments
 - [x] 7.9 Implement final preview using the exact saved business/KYC/pricing versions and sanitized account/identity summaries
 - [x] 7.10 Implement idempotent final submission, frozen submitted KYC version, workflow outbox event, and duplicate-click tests
+
+### Workflow Prerequisites for Supplementation
+
+> Execution-order override: task 7.11 must bind a new KYC version to an authoritative Flowable process/task and
+> validated supplementation action. Execute `8.1 → 8.2 → 8.3 → 8.4 → 8.5` before task 7.11, then return to
+> task 7.12 after the supplementation domain path is complete.
+
 - [ ] 7.11 Implement supplementation as a new linked KYC version with field/attachment diff and no direct mutation of submitted versions
 - [ ] 7.12 Implement Vue five-step wizard, local unsaved state, explicit save indicator, reload recovery, preview, conflict resolution, and safe attachment viewer
 
 ## 8. Flowable Adapter and Task Center
 
-- [ ] 8.1 Configure Flowable process engine, dedicated schema/prefix, history level, async executor, job monitoring, and production schema-update policy
+- [x] 8.1 Configure Flowable process engine, dedicated schema/prefix, history level, async executor, job monitoring, and production schema-update policy
 - [ ] 8.2 Implement project-owned workflow commands/DTOs and adapter for start, claim, unclaim, complete, query todo/done, and history
 - [ ] 8.3 Implement business-key/workflow mapping with tenant, business type/ID/version, process definition/version, process instance, and unique idempotency
 - [ ] 8.4 Implement ContiNew tenant, user ID, role-code candidate group, enabled-user, and agent/merchant-scope resolution for every task query/action

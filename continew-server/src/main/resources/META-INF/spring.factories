@@ -1,2 +1,3 @@
 org.springframework.boot.env.EnvironmentPostProcessor=\
-top.continew.admin.config.security.ProductionSecretEnvironmentPostProcessor
+top.continew.admin.config.security.ProductionSecretEnvironmentPostProcessor,\
+top.continew.admin.config.workflow.ProductionFlowableEnvironmentPostProcessor

@@ -173,6 +173,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyIdempotentOnboardingSubmission();
     }
 
+    @Test
+    void flowableEngineUsesReviewedHistoryAsyncAndMonitoringPolicy() {
+        verifyFlowableEnginePolicy();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

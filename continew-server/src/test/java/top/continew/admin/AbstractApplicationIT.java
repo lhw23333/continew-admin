@@ -128,6 +128,9 @@ import top.continew.admin.service.merchant.SubordinateAgentProvisioningResult;
 import top.continew.admin.service.merchant.SubordinateAgentProvisioningService;
 import top.continew.admin.auth.service.OnlineUserService;
 import top.continew.starter.extension.tenant.util.TenantUtils;
+import top.continew.admin.workflow.internal.flowable.FlowableEnginePolicyProperties;
+import top.continew.admin.workflow.internal.flowable.FlowableJobMonitor;
+import top.continew.admin.workflow.internal.flowable.FlowableJobSnapshot;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -149,6 +152,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ProcessEngine processEngine;
+
+    @Autowired
+    private FlowableEnginePolicyProperties flowableEnginePolicyProperties;
+
+    @Autowired
+    private FlowableJobMonitor flowableJobMonitor;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -264,6 +273,50 @@ abstract class AbstractApplicationIT {
         org.junit.jupiter.api.Assertions.assertTrue(applicationContext.getBeansOfType(IdmEngine.class).isEmpty());
         org.junit.jupiter.api.Assertions.assertTrue(applicationContext.getBeansOfType(EventRegistryEngine.class)
             .isEmpty());
+    }
+
+    protected void verifyFlowableEnginePolicy() {
+        org.flowable.engine.impl.cfg.ProcessEngineConfigurationImpl configuration = (org.flowable.engine.impl.cfg.ProcessEngineConfigurationImpl)processEngine
+            .getProcessEngineConfiguration();
+        org.junit.jupiter.api.Assertions
+            .assertEquals(org.flowable.common.engine.impl.history.HistoryLevel.AUDIT, configuration.getHistoryLevel());
+        org.junit.jupiter.api.Assertions.assertFalse(configuration.isAsyncHistoryExecutorActivate());
+        org.junit.jupiter.api.Assertions.assertTrue(configuration.isAsyncExecutorActivate());
+        org.junit.jupiter.api.Assertions.assertTrue(configuration.getAsyncExecutor().isActive());
+        org.junit.jupiter.api.Assertions.assertEquals("false", configuration.getDatabaseSchemaUpdate());
+        FlowableEnginePolicyProperties.AsyncExecutorProperties async = flowableEnginePolicyProperties
+            .getAsyncExecutor();
+        org.junit.jupiter.api.Assertions.assertEquals(async.getCorePoolSize(), configuration
+            .getAsyncExecutorCorePoolSize());
+        org.junit.jupiter.api.Assertions.assertEquals(async.getMaxPoolSize(), configuration
+            .getAsyncExecutorMaxPoolSize());
+        org.junit.jupiter.api.Assertions.assertEquals(async.getQueueSize(), configuration
+            .getAsyncExecutorThreadPoolQueueSize());
+        org.junit.jupiter.api.Assertions.assertEquals(async.getRetries(), configuration
+            .getAsyncExecutorNumberOfRetries());
+        org.junit.jupiter.api.Assertions.assertTrue(processEngine.getManagementService()
+            .getTableName(org.flowable.job.api.Job.class)
+            .toUpperCase(java.util.Locale.ROOT)
+            .startsWith("ACT_"));
+
+        FlowableJobSnapshot snapshot = flowableJobMonitor.snapshot();
+        org.junit.jupiter.api.Assertions.assertTrue(snapshot.executableJobs() >= 0);
+        org.junit.jupiter.api.Assertions.assertTrue(snapshot.timerJobs() >= 0);
+        org.junit.jupiter.api.Assertions.assertTrue(snapshot.suspendedJobs() >= 0);
+        org.junit.jupiter.api.Assertions.assertTrue(snapshot.deadLetterJobs() >= 0);
+        org.junit.jupiter.api.Assertions.assertTrue(snapshot.historyJobs() >= 0);
+        org.springframework.boot.actuate.health.HealthIndicator healthIndicator = applicationContext
+            .getBean("flowableJobs", org.springframework.boot.actuate.health.HealthIndicator.class);
+        org.junit.jupiter.api.Assertions.assertEquals(org.springframework.boot.actuate.health.Status.UP, healthIndicator
+            .health()
+            .getStatus());
+        io.micrometer.core.instrument.MeterRegistry registry = applicationContext
+            .getBean(io.micrometer.core.instrument.MeterRegistry.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.executable").gauge());
+        org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.timer").gauge());
+        org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.suspended").gauge());
+        org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.dead_letter").gauge());
+        org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.history").gauge());
     }
 
     protected void seedRepresentativeQueryData() {
