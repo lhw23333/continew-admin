@@ -133,6 +133,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingDraftPersistence();
     }
 
+    @Test
+    void historicalKycReuseIsSameMerchantAllowlistedAndRevalidated() {
+        verifySameMerchantKycReuse();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

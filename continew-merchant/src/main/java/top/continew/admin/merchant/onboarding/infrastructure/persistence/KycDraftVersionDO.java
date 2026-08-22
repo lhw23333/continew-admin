@@ -21,6 +21,8 @@ import lombok.Data;
 import top.continew.admin.common.base.model.entity.TenantBaseDO;
 
 import java.io.Serial;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /** Minimal KYC draft persistence entity for progress and optimistic versioning. */
 @Data
@@ -33,11 +35,22 @@ public class KycDraftVersionDO extends TenantBaseDO {
     private Long merchantId;
     private Long onboardingApplicationId;
     private Integer versionNo;
+    private Long sourceKycVersionId;
+    private String reuseProvenanceJson;
     private String requirementVersion;
     private String status;
     private Integer savedStep;
     private String stepCompletionJson;
     private String legalName;
+    private byte[] legalIdentifierCiphertext;
+    private String legalIdentifierHash;
+    private String legalIdentifierHashKeyVersion;
+    private String legalIdentifierMasked;
+    private String legalIdentifierKeyVersion;
+    private LocalDate licenseIssueDate;
+    private LocalDate licenseExpiryDate;
+    private String businessScope;
     private Long pricingVersionId;
+    private LocalDateTime frozenTime;
     private Long rowVersion;
 }

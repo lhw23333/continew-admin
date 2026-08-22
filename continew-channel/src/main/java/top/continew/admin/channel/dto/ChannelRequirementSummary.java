@@ -22,7 +22,7 @@ import java.util.Set;
 
 /** Non-sensitive requirement summary returned before an onboarding draft is created. */
 public record ChannelRequirementSummary(List<String> requiredEvidenceTypes, List<String> optionalEvidenceTypes,
-                                        Integer maxSupplementAttachments) {
+                                        Integer maxSupplementAttachments, List<String> reuseExcludedFields) {
 
     public ChannelRequirementSummary {
         requiredEvidenceTypes = normalized(requiredEvidenceTypes, "requiredEvidenceTypes");
@@ -35,6 +35,9 @@ public record ChannelRequirementSummary(List<String> requiredEvidenceTypes, List
         if (maxSupplementAttachments == null || maxSupplementAttachments < 0 || maxSupplementAttachments > 100) {
             throw new IllegalArgumentException("maxSupplementAttachments is invalid");
         }
+        reuseExcludedFields = reuseExcludedFields == null
+            ? List.of()
+            : normalized(reuseExcludedFields, "reuseExcludedFields");
     }
 
     private static List<String> normalized(List<String> values, String name) {

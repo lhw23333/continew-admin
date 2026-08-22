@@ -16,6 +16,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/onboarding-draft.sql
   - include:
+      file: db/changelog/mysql/merchant/kyc-reuse-provenance.sql
+  - include:
       file: db/changelog/mysql/merchant/merchant-query-projection.sql
   - include:
       file: db/changelog/mysql/merchant/agent-identity.sql

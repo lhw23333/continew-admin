@@ -78,6 +78,9 @@ import top.continew.admin.merchant.master.domain.MerchantStatus;
 import top.continew.admin.merchant.master.domain.MerchantType;
 import top.continew.admin.merchant.onboarding.application.ChannelEligibilityService;
 import top.continew.admin.merchant.onboarding.application.EligibleChannel;
+import top.continew.admin.merchant.onboarding.application.KycReuseField;
+import top.continew.admin.merchant.onboarding.application.KycReuseService;
+import top.continew.admin.merchant.onboarding.application.KycReuseSourceView;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftConflictException;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
@@ -107,6 +110,7 @@ import top.continew.admin.auth.service.OnlineUserService;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -197,6 +201,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingDraftService onboardingDraftService;
+
+    @Autowired
+    private KycReuseService kycReuseService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -1396,6 +1403,118 @@ abstract class AbstractApplicationIT {
         });
     }
 
+    protected void verifySameMerchantKycReuse() {
+        long tenantId = 922L;
+        long rootAgentId = 92201L;
+        long merchantAgentId = 92202L;
+        long siblingAgentId = 92203L;
+        long rootUserId = 92211L;
+        long merchantAgentUserId = 92212L;
+        long siblingUserId = 92213L;
+        long merchantId = 922101L;
+        long otherMerchantId = 922102L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "REUSE-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "REUSE-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingUserId, "REUSE-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 922201L, 922202L, "REUSE-TARGET", "a"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(otherMerchantId, tenantId, merchantAgentId, 922203L, 922204L, "REUSE-OTHER", "b"
+                    .repeat(64)));
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 10, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 922501L, 1, "CHANNEL-R", "PRODUCT-R", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 922601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-R","productCode":"PRODUCT-R","pricingVersionId":922501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(922701L, tenantId, "CHANNEL-R", "PRODUCT-R", "CFG-R-1", "REQ-R-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime, "[\"BUSINESS_SCOPE\"]");
+
+            insertReusableKycVersion(tenantId, merchantId, merchantAgentId, 922301L, 922401L, 1, "SOURCE-A", LocalDate
+                .of(2025, 1, 1), LocalDate.of(2027, 1, 1), baseTime);
+            insertReusableKycVersion(tenantId, merchantId, merchantAgentId, 922302L, 922402L, 2, "SOURCE-EXPIRED", LocalDate
+                .of(2024, 1, 1), LocalDate.of(2026, 8, 21), baseTime.plusHours(1));
+            insertReusableKycVersion(tenantId, otherMerchantId, merchantAgentId, 922303L, 922403L, 1, "OTHER-MERCHANT", LocalDate
+                .of(2025, 1, 1), LocalDate.of(2027, 1, 1), baseTime.plusHours(2));
+
+            OnboardingDraftView target = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-R", "PRODUCT-R", "127.0.0.1");
+            List<KycReuseSourceView> sources = kycReuseService
+                .listSources(tenantId, merchantAgentUserId, merchantId, target.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals(2, sources.size());
+            KycReuseSourceView valid = sources.stream()
+                .filter(source -> source.kycVersionId().equals(922401L))
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals("SOURCE-A", valid.sourceChannelCode());
+            org.junit.jupiter.api.Assertions.assertEquals("91************5678", valid.legalIdentifierMasked());
+            org.junit.jupiter.api.Assertions.assertEquals(List
+                .of(KycReuseField.LEGAL_NAME, KycReuseField.LEGAL_IDENTIFIER, KycReuseField.LICENSE_DATES), valid
+                    .reusableFields());
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(KycReuseField.BUSINESS_SCOPE), valid
+                .fieldsRequiringReconfirmation());
+            KycReuseSourceView expired = sources.stream()
+                .filter(source -> source.kycVersionId().equals(922402L))
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertFalse(expired.reusableFields()
+                .contains(KycReuseField.LICENSE_DATES));
+            org.junit.jupiter.api.Assertions.assertTrue(expired.fieldsRequiringReconfirmation()
+                .contains(KycReuseField.LICENSE_DATES));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantAccessDeniedException.class, () -> kycReuseService
+                .listSources(tenantId, siblingUserId, merchantId, target.draft().applicationId()));
+
+            var reused = kycReuseService.reuse(tenantId, merchantAgentUserId, merchantId, target.draft()
+                .applicationId(), 922401L, Set
+                    .of(KycReuseField.LEGAL_NAME, KycReuseField.LEGAL_IDENTIFIER, KycReuseField.LICENSE_DATES), 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(1L, reused.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(922401L, jdbcTemplate.queryForObject("""
+                SELECT source_kyc_version_id FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, Long.class, tenantId, target.draft().kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertEquals("Reusable Legal SOURCE-A", jdbcTemplate.queryForObject("""
+                SELECT legal_name FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, target.draft().kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertEquals("91************5678", jdbcTemplate.queryForObject("""
+                SELECT legal_identifier_masked FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, target.draft().kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertNull(jdbcTemplate.queryForObject("""
+                SELECT business_scope FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, target.draft().kycVersionId()));
+            String provenance = jdbcTemplate.queryForObject("""
+                SELECT reuse_provenance_json FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, target.draft().kycVersionId());
+            org.junit.jupiter.api.Assertions.assertTrue(provenance.contains("SOURCE-A"));
+            org.junit.jupiter.api.Assertions.assertTrue(provenance.contains("LEGAL_IDENTIFIER"));
+            org.junit.jupiter.api.Assertions.assertFalse(provenance.contains("Reusable Legal"));
+            org.junit.jupiter.api.Assertions.assertFalse(provenance.contains("91350211"));
+
+            org.junit.jupiter.api.Assertions.assertThrows(OnboardingDraftConflictException.class, () -> kycReuseService
+                .reuse(tenantId, merchantAgentUserId, merchantId, target.draft().applicationId(), 922401L, Set
+                    .of(KycReuseField.LEGAL_NAME), 0L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> kycReuseService
+                .reuse(tenantId, merchantAgentUserId, merchantId, target.draft().applicationId(), 922401L, Set
+                    .of(KycReuseField.BUSINESS_SCOPE), 1L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantAccessDeniedException.class, () -> kycReuseService
+                .reuse(tenantId, merchantAgentUserId, merchantId, target.draft().applicationId(), 922403L, Set
+                    .of(KycReuseField.LEGAL_NAME), 1L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'KYC_DRAFT_REUSE'
+                """, Integer.class, tenantId, target.draft().kycVersionId()));
+        });
+    }
+
     private void insertQueryUser(Long tenantId, Long userId, String username) {
         jdbcTemplate.update("""
             INSERT INTO sys_user
@@ -1413,16 +1532,64 @@ abstract class AbstractApplicationIT {
                                              String merchantTypesJson,
                                              String status,
                                              LocalDateTime effectiveTime) {
-        jdbcTemplate.update("""
-            INSERT INTO biz_channel_product_version
-            (id, tenant_id, channel_code, product_code, config_version, requirement_version,
-             supported_merchant_types_json, requirement_summary_json, status, effective_time,
-             create_user, create_time, deleted)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0)
-            """, id, tenantId, channelCode, productCode, configVersion, requirementVersion, merchantTypesJson, """
+        insertChannelProductVersion(id, tenantId, channelCode, productCode, configVersion, requirementVersion, merchantTypesJson, status, effectiveTime, "[]");
+    }
+
+    private void insertChannelProductVersion(Long id,
+                                             Long tenantId,
+                                             String channelCode,
+                                             String productCode,
+                                             String configVersion,
+                                             String requirementVersion,
+                                             String merchantTypesJson,
+                                             String status,
+                                             LocalDateTime effectiveTime,
+                                             String reuseExcludedFieldsJson) {
+        String requirementSummary = """
             {"requiredEvidenceTypes":["BUSINESS_LICENSE","LEGAL_REPRESENTATIVE_ID_FRONT"],
-             "optionalEvidenceTypes":["SUPPLEMENT"],"maxSupplementAttachments":5}
-            """, status, effectiveTime, effectiveTime);
+             "optionalEvidenceTypes":["SUPPLEMENT"],"maxSupplementAttachments":5,
+             "reuseExcludedFields":%s}
+            """.formatted(reuseExcludedFieldsJson);
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_channel_product_version
+                (id, tenant_id, channel_code, product_code, config_version, requirement_version,
+                 supported_merchant_types_json, requirement_summary_json, status, effective_time,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0)
+                """, id, tenantId, channelCode, productCode, configVersion, requirementVersion, merchantTypesJson, requirementSummary, status, effectiveTime, effectiveTime);
+    }
+
+    private void insertReusableKycVersion(Long tenantId,
+                                          Long merchantId,
+                                          Long owningAgentId,
+                                          Long applicationId,
+                                          Long kycVersionId,
+                                          Integer versionNo,
+                                          String sourceChannelCode,
+                                          LocalDate licenseIssueDate,
+                                          LocalDate licenseExpiryDate,
+                                          LocalDateTime frozenTime) {
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_onboarding_application
+                (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, product_code,
+                 requirement_version, channel_config_version, kyc_version_id, status, row_version,
+                 create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, ?, 'SOURCE-PRODUCT', 'SOURCE-REQ-1', 'SOURCE-CFG-1', ?, 'SUCCEEDED', 0, ?, 0)
+                """, applicationId, tenantId, "APP-" + sourceChannelCode, merchantId, owningAgentId, sourceChannelCode, kycVersionId, frozenTime);
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_kyc_version
+                (id, tenant_id, merchant_id, onboarding_application_id, version_no, requirement_version,
+                 status, saved_step, step_completion_json, legal_name, legal_identifier_ciphertext,
+                 legal_identifier_hash, legal_identifier_hash_key_version, legal_identifier_masked,
+                 legal_identifier_key_version, license_issue_date, license_expiry_date, business_scope,
+                 frozen_time, row_version, create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, 'SOURCE-REQ-1', 'SUBMITTED', 5, '[1,2,3,4,5]', ?, ?, ?,
+                        'hash-v1', '91************5678', 'data-v1', ?, ?, 'Reusable Business Scope', ?, 0, ?, 0)
+                """, kycVersionId, tenantId, merchantId, applicationId, versionNo, "Reusable Legal " + sourceChannelCode, new byte[] {
+                9, 1, 3, 5, 0, 2, 1, 1}, "c".repeat(64), licenseIssueDate, licenseExpiryDate, frozenTime, frozenTime);
     }
 
     private void insertPricingVersion(Long tenantId,
