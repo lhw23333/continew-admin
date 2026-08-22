@@ -131,12 +131,26 @@ import top.continew.starter.extension.tenant.util.TenantUtils;
 import top.continew.admin.workflow.internal.flowable.FlowableEnginePolicyProperties;
 import top.continew.admin.workflow.internal.flowable.FlowableJobMonitor;
 import top.continew.admin.workflow.internal.flowable.FlowableJobSnapshot;
+import top.continew.admin.workflow.api.InvalidWorkflowVariableException;
+import top.continew.admin.workflow.api.WorkflowOperationException;
+import top.continew.admin.workflow.api.WorkflowService;
+import top.continew.admin.workflow.command.ClaimTaskCommand;
+import top.continew.admin.workflow.command.CompleteTaskCommand;
+import top.continew.admin.workflow.command.StartWorkflowCommand;
+import top.continew.admin.workflow.command.UnclaimTaskCommand;
+import top.continew.admin.workflow.dto.WorkflowPage;
+import top.continew.admin.workflow.dto.WorkflowProcessHistory;
+import top.continew.admin.workflow.dto.WorkflowRef;
+import top.continew.admin.workflow.dto.WorkflowTask;
+import top.continew.admin.workflow.query.WorkflowDoneQuery;
+import top.continew.admin.workflow.query.WorkflowTaskQuery;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -158,6 +172,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private FlowableJobMonitor flowableJobMonitor;
+
+    @Autowired
+    private WorkflowService workflowService;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -317,6 +334,116 @@ abstract class AbstractApplicationIT {
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.suspended").gauge());
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.dead_letter").gauge());
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.history").gauge());
+    }
+
+    protected void verifyWorkflowAdapterCommandsAndQueries() {
+        long tenantId = 931L;
+        long reviewerUserId = 93111L;
+        String processKey = "workflow-adapter-test-v1";
+        String businessKey = "931:WORKFLOW_ADAPTER:93101:1";
+        String resourceName = "workflow-adapter-test-931.bpmn20.xml";
+        String bpmn = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         xmlns:flowable="http://flowable.org/bpmn"
+                         targetNamespace="https://continew.top/workflow/test">
+              <process id="workflow-adapter-test-v1" name="Workflow Adapter Test" isExecutable="true">
+                <startEvent id="start" />
+                <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="reviewTask" />
+                <userTask id="reviewTask" name="Synthetic Review" flowable:candidateGroups="ROLE_REVIEW" />
+                <sequenceFlow id="flow-review-end" sourceRef="reviewTask" targetRef="end" />
+                <endEvent id="end" />
+              </process>
+            </definitions>
+            """;
+        org.flowable.engine.repository.Deployment deployment = processEngine.getRepositoryService()
+            .createDeployment()
+            .tenantId(String.valueOf(tenantId))
+            .name("workflow-adapter-test-931")
+            .addString(resourceName, bpmn)
+            .deploy();
+        try {
+            Map<String, Object> variables = Map
+                .of("tenantId", tenantId, "merchantId", 93101L, "applicationId", 93102L, "kycVersion", 1L, "channelCode", "SYNTHETIC", "applicantId", 93103L, "owningAgentId", 93104L, "riskLevel", "LOW", "requiresSupplement", Boolean.FALSE);
+            WorkflowRef started = workflowService
+                .start(new StartWorkflowCommand(tenantId, processKey, businessKey, variables));
+            org.junit.jupiter.api.Assertions.assertEquals(processKey, started.processDefinitionKey());
+            org.junit.jupiter.api.Assertions.assertEquals(1, started.processDefinitionVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(String.valueOf(tenantId), started.tenantId());
+
+            WorkflowPage<WorkflowTask> todo = workflowService
+                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, Set
+                    .of("ROLE_REVIEW"), processKey, businessKey, "Review", false, 1, 20));
+            org.junit.jupiter.api.Assertions.assertEquals(1, todo.total());
+            WorkflowTask task = todo.items().get(0);
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowTask.State.TODO, task.state());
+            org.junit.jupiter.api.Assertions.assertEquals("reviewTask", task.taskDefinitionKey());
+            org.junit.jupiter.api.Assertions.assertTrue(workflowService
+                .pageTodo(new WorkflowTaskQuery(tenantId + 1, reviewerUserId, Set
+                    .of("ROLE_REVIEW"), processKey, businessKey, null, false, 1, 20)).items().isEmpty());
+
+            workflowService.claim(new ClaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
+            WorkflowPage<WorkflowTask> claimed = workflowService
+                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, Set
+                    .of("ROLE_REVIEW"), processKey, businessKey, null, true, 1, 20));
+            org.junit.jupiter.api.Assertions.assertEquals(1, claimed.total());
+            org.junit.jupiter.api.Assertions.assertEquals(String.valueOf(reviewerUserId), claimed.items()
+                .get(0)
+                .assignee());
+            WorkflowOperationException wrongUnclaim = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowService
+                    .unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), reviewerUserId + 1)));
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowOperationException.Code.NOT_ASSIGNED, wrongUnclaim
+                .code());
+            workflowService.unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
+            workflowService.claim(new ClaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
+            workflowService.complete(new CompleteTaskCommand(tenantId, task.taskId(), reviewerUserId, Map
+                .of("requiresSupplement", Boolean.FALSE)));
+
+            WorkflowPage<WorkflowTask> done = workflowService
+                .pageDone(new WorkflowDoneQuery(tenantId, reviewerUserId, processKey, businessKey, "Review", 1, 20));
+            org.junit.jupiter.api.Assertions.assertEquals(1, done.total());
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowTask.State.DONE, done.items().get(0).state());
+            WorkflowProcessHistory history = workflowService.history(tenantId, started.processInstanceId());
+            org.junit.jupiter.api.Assertions.assertTrue(history.ended());
+            org.junit.jupiter.api.Assertions.assertEquals(processKey, history.processDefinitionKey());
+            org.junit.jupiter.api.Assertions.assertTrue(history.activities()
+                .stream()
+                .anyMatch(activity -> "reviewTask".equals(activity.activityId())));
+            org.junit.jupiter.api.Assertions.assertEquals(List.of("reviewTask"), history.tasks()
+                .stream()
+                .map(WorkflowTask::taskDefinitionKey)
+                .toList());
+            org.junit.jupiter.api.Assertions.assertNull(processEngine.getRuntimeService()
+                .createProcessInstanceQuery()
+                .processInstanceId(started.processInstanceId())
+                .singleResult());
+            Set<String> historicVariableNames = processEngine.getHistoryService()
+                .createHistoricVariableInstanceQuery()
+                .processInstanceId(started.processInstanceId())
+                .list()
+                .stream()
+                .map(org.flowable.variable.api.history.HistoricVariableInstance::getVariableName)
+                .collect(java.util.stream.Collectors.toSet());
+            org.junit.jupiter.api.Assertions.assertTrue(Set
+                .of("tenantId", "merchantId", "applicationId", "kycVersion", "channelCode", "applicantId", "owningAgentId", "riskLevel", "requiresSupplement")
+                .containsAll(historicVariableNames));
+
+            long historicCount = processEngine.getHistoryService()
+                .createHistoricProcessInstanceQuery()
+                .processDefinitionKey(processKey)
+                .count();
+            org.junit.jupiter.api.Assertions.assertThrows(InvalidWorkflowVariableException.class, () -> workflowService
+                .start(new StartWorkflowCommand(tenantId, processKey, businessKey + ":invalid", Map
+                    .of("identityNumber", "110101199001011234"))));
+            org.junit.jupiter.api.Assertions.assertEquals(historicCount, processEngine.getHistoryService()
+                .createHistoricProcessInstanceQuery()
+                .processDefinitionKey(processKey)
+                .count());
+        } finally {
+            processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
+        }
     }
 
     protected void seedRepresentativeQueryData() {

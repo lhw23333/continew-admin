@@ -184,6 +184,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyFlowableEnginePolicy();
     }
 
+    @Test
+    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() {
+        verifyWorkflowAdapterCommandsAndQueries();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

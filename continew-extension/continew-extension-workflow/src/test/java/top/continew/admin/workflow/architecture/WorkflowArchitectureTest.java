@@ -27,7 +27,7 @@ class WorkflowArchitectureTest {
 
     @ArchTest
     static final ArchRule PUBLIC_CONTRACTS_MUST_NOT_IMPORT_FLOWABLE = noClasses().that()
-        .resideInAnyPackage("top.continew.admin.workflow.api..", "top.continew.admin.workflow.dto..")
+        .resideInAnyPackage("top.continew.admin.workflow.api..", "top.continew.admin.workflow.command..", "top.continew.admin.workflow.dto..", "top.continew.admin.workflow.query..")
         .should()
         .dependOnClassesThat()
         .resideInAnyPackage("org.flowable..");

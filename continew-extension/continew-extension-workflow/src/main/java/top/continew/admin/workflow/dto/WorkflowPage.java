@@ -16,16 +16,12 @@
 
 package top.continew.admin.workflow.dto;
 
-/**
- * Engine-neutral reference returned by workflow commands.
- *
- * @param processInstanceId        process instance identifier
- * @param businessKey              stable business key
- * @param processDefinitionId      deployed definition identifier
- * @param processDefinitionKey     stable process key
- * @param processDefinitionVersion deployed definition version
- * @param tenantId                 Flowable tenant identifier mapped from ContiNew tenant ID
- */
-public record WorkflowRef(String processInstanceId, String businessKey, String processDefinitionId,
-                          String processDefinitionKey, Integer processDefinitionVersion, String tenantId) {
+import java.util.List;
+
+/** Engine-neutral stable page response. */
+public record WorkflowPage<T>(List<T> items, long total, int page, int size) {
+
+    public WorkflowPage {
+        items = List.copyOf(items);
+    }
 }

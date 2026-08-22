@@ -16,16 +16,9 @@
 
 package top.continew.admin.workflow.dto;
 
-/**
- * Engine-neutral reference returned by workflow commands.
- *
- * @param processInstanceId        process instance identifier
- * @param businessKey              stable business key
- * @param processDefinitionId      deployed definition identifier
- * @param processDefinitionKey     stable process key
- * @param processDefinitionVersion deployed definition version
- * @param tenantId                 Flowable tenant identifier mapped from ContiNew tenant ID
- */
-public record WorkflowRef(String processInstanceId, String businessKey, String processDefinitionId,
-                          String processDefinitionKey, Integer processDefinitionVersion, String tenantId) {
+import java.time.LocalDateTime;
+
+/** Sanitized historic activity node. */
+public record WorkflowActivityHistory(String activityId, String activityName, String activityType, String assignee,
+                                      LocalDateTime startTime, LocalDateTime endTime, Long durationMillis) {
 }
