@@ -103,6 +103,11 @@ import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveC
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountView;
+import top.continew.admin.merchant.review.application.OnboardingReviewAction;
+import top.continew.admin.merchant.review.application.OnboardingReviewCommand;
+import top.continew.admin.merchant.review.application.OnboardingReviewResult;
+import top.continew.admin.merchant.review.application.OnboardingReviewService;
+import top.continew.admin.merchant.review.application.OnboardingTransferCommand;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
@@ -276,6 +281,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingSubmissionService onboardingSubmissionService;
+
+    @Autowired
+    private OnboardingReviewService onboardingReviewService;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -556,6 +564,207 @@ abstract class AbstractApplicationIT {
         ready.countDown();
         start.await();
         return workflowService.start(command);
+    }
+
+    protected void verifyOnboardingReviewActionsAndImmutableRecords() {
+        long tenantId = 932L;
+        long riskUserId = 93211L;
+        long reviewerUserId = 93212L;
+        long applicantUserId = 93213L;
+        long rootAgentId = 932001L;
+        long merchantAgentId = 932002L;
+        long merchantId = 932101L;
+        long riskRoleId = 932201L;
+        long reviewerRoleId = 932202L;
+        long applicationApproveId = 932301L;
+        long applicationRejectId = 932302L;
+        long applicationSelfReviewId = 932303L;
+        String processKey = "workflow-review-action-test-v1";
+        LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 22, 10, 0);
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, riskUserId, "REVIEW-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, 93221L, "REVIEW-MERCHANT"));
+            merchantMasterService
+                .register(riskUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, applicantUserId, reviewerUserId, "REVIEW-MERCHANT", "f"
+                    .repeat(64)));
+            insertQueryUser(tenantId, riskUserId, "risk-reviewer");
+            insertQueryUser(tenantId, reviewerUserId, "merchant-reviewer");
+            insertQueryUser(tenantId, applicantUserId, "review-applicant");
+            jdbcTemplate.update("""
+                INSERT INTO sys_role
+                (id, name, code, data_scope, description, sort, is_system, menu_check_strictly,
+                 dept_check_strictly, create_user, create_time, deleted, tenant_id)
+                VALUES (?, 'Risk Reviewer', 'RISK_REVIEWER', 4, NULL, 1, ?, ?, ?, 1, ?, 0, ?)
+                """, riskRoleId, false, true, true, fixtureTime, tenantId);
+            jdbcTemplate.update("""
+                INSERT INTO sys_role
+                (id, name, code, data_scope, description, sort, is_system, menu_check_strictly,
+                 dept_check_strictly, create_user, create_time, deleted, tenant_id)
+                VALUES (?, 'Merchant Reviewer', 'MERCHANT_REVIEWER', 4, NULL, 2, ?, ?, ?, 1, ?, 0, ?)
+                """, reviewerRoleId, false, true, true, fixtureTime, tenantId);
+            jdbcTemplate
+                .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 932401L, riskUserId, riskRoleId, tenantId);
+            jdbcTemplate
+                .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 932402L, reviewerUserId, reviewerRoleId, tenantId);
+            jdbcTemplate
+                .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 932403L, applicantUserId, reviewerRoleId, tenantId);
+            insertReviewApplication(tenantId, applicationApproveId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
+            insertReviewApplication(tenantId, applicationRejectId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
+            insertReviewApplication(tenantId, applicationSelfReviewId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
+        });
+
+        String bpmn = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         xmlns:flowable="http://flowable.org/bpmn"
+                         targetNamespace="https://continew.top/workflow/review-test">
+              <process id="workflow-review-action-test-v1" name="Workflow Review Action Test" isExecutable="true">
+                <startEvent id="start" />
+                <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="reviewTask" />
+                <userTask id="reviewTask" name="Merchant Review"
+                          flowable:candidateGroups="MERCHANT_REVIEWER,RISK_REVIEWER" />
+                <sequenceFlow id="flow-review-decision" sourceRef="reviewTask" targetRef="reviewDecision" />
+                <exclusiveGateway id="reviewDecision" default="flow-review-end" />
+                <sequenceFlow id="flow-review-supplement" sourceRef="reviewDecision" targetRef="supplementTask">
+                  <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'REQUEST_SUPPLEMENT'}]]></conditionExpression>
+                </sequenceFlow>
+                <sequenceFlow id="flow-review-end" sourceRef="reviewDecision" targetRef="end" />
+                <userTask id="supplementTask" name="Merchant Supplement" flowable:assignee="${applicantId}" />
+                <sequenceFlow id="flow-supplement-review" sourceRef="supplementTask" targetRef="reviewTask" />
+                <endEvent id="end" />
+              </process>
+            </definitions>
+            """;
+        org.flowable.engine.repository.Deployment deployment = processEngine.getRepositoryService()
+            .createDeployment()
+            .tenantId(String.valueOf(tenantId))
+            .name("workflow-review-action-test-932")
+            .addString("workflow-review-action-test-932.bpmn20.xml", bpmn)
+            .deploy();
+        try {
+            TenantUtils.execute(tenantId, () -> {
+                WorkflowRef approveFlow = startReviewWorkflow(tenantId, processKey, applicationApproveId, 1L, merchantId, merchantAgentId, applicantUserId);
+                WorkflowTask initialReviewTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, riskUserId, processKey, approveFlow
+                        .businessKey(), null, false, 1, 20))
+                    .items()
+                    .get(0);
+                workflowService.claim(new ClaimTaskCommand(tenantId, initialReviewTask.taskId(), riskUserId));
+                OnboardingReviewResult transferred = onboardingReviewService
+                    .transfer(new OnboardingTransferCommand(tenantId, riskUserId, initialReviewTask
+                        .taskId(), reviewerUserId, 1L, "Transfer to merchant reviewer", "127.0.0.1"));
+                org.junit.jupiter.api.Assertions.assertEquals(reviewerUserId, transferred.targetUserId());
+                OnboardingReviewResult supplement = onboardingReviewService
+                    .review(new OnboardingReviewCommand(tenantId, reviewerUserId, initialReviewTask
+                        .taskId(), 1L, OnboardingReviewAction.REQUEST_SUPPLEMENT, "Storefront evidence is missing", List
+                            .of("STORE_QR_MISSING"), "127.0.0.1"));
+                org.junit.jupiter.api.Assertions.assertEquals("SUPPLEMENT_REQUIRED", supplement.applicationStatus());
+                WorkflowTask supplementTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, applicantUserId, processKey, approveFlow
+                        .businessKey(), null, true, 1, 20))
+                    .items()
+                    .get(0);
+                onboardingReviewService.review(new OnboardingReviewCommand(tenantId, applicantUserId, supplementTask
+                    .taskId(), 1L, OnboardingReviewAction.RESUBMIT, "Supplemented requested evidence", List
+                        .of(), "127.0.0.1"));
+                WorkflowTask returnedReviewTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, approveFlow
+                        .businessKey(), null, false, 1, 20))
+                    .items()
+                    .get(0);
+                workflowService.claim(new ClaimTaskCommand(tenantId, returnedReviewTask.taskId(), reviewerUserId));
+                OnboardingReviewResult approved = onboardingReviewService
+                    .review(new OnboardingReviewCommand(tenantId, reviewerUserId, returnedReviewTask
+                        .taskId(), 1L, OnboardingReviewAction.APPROVE, "Review passed", List.of(), "127.0.0.1"));
+                org.junit.jupiter.api.Assertions.assertEquals("APPROVED", approved.applicationStatus());
+
+                WorkflowRef rejectFlow = startReviewWorkflow(tenantId, processKey, applicationRejectId, 2L, merchantId, merchantAgentId, applicantUserId);
+                WorkflowTask rejectTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, rejectFlow
+                        .businessKey(), null, false, 1, 20))
+                    .items()
+                    .get(0);
+                workflowService.claim(new ClaimTaskCommand(tenantId, rejectTask.taskId(), reviewerUserId));
+                org.junit.jupiter.api.Assertions
+                    .assertThrows(MerchantDomainException.class, () -> onboardingReviewService
+                        .review(new OnboardingReviewCommand(tenantId, reviewerUserId, rejectTask
+                            .taskId(), 2L, OnboardingReviewAction.REJECT, null, List.of(), "127.0.0.1")));
+                OnboardingReviewResult rejected = onboardingReviewService
+                    .review(new OnboardingReviewCommand(tenantId, reviewerUserId, rejectTask
+                        .taskId(), 2L, OnboardingReviewAction.REJECT, "Business evidence is inconsistent", List
+                            .of(), "127.0.0.1"));
+                org.junit.jupiter.api.Assertions.assertEquals("REJECTED", rejected.applicationStatus());
+
+                WorkflowRef selfReviewFlow = startReviewWorkflow(tenantId, processKey, applicationSelfReviewId, 3L, merchantId, merchantAgentId, applicantUserId);
+                WorkflowTask selfReviewTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, applicantUserId, processKey, selfReviewFlow
+                        .businessKey(), null, false, 1, 20))
+                    .items()
+                    .get(0);
+                workflowService.claim(new ClaimTaskCommand(tenantId, selfReviewTask.taskId(), applicantUserId));
+                org.junit.jupiter.api.Assertions
+                    .assertThrows(MerchantDomainException.class, () -> onboardingReviewService
+                        .review(new OnboardingReviewCommand(tenantId, applicantUserId, selfReviewTask
+                            .taskId(), 3L, OnboardingReviewAction.APPROVE, "Self review", List.of(), "127.0.0.1")));
+
+                org.junit.jupiter.api.Assertions
+                    .assertEquals("APPROVED", reviewApplicationStatus(tenantId, applicationApproveId));
+                org.junit.jupiter.api.Assertions
+                    .assertEquals("REJECTED", reviewApplicationStatus(tenantId, applicationRejectId));
+                org.junit.jupiter.api.Assertions
+                    .assertEquals("SUBMITTED", reviewApplicationStatus(tenantId, applicationSelfReviewId));
+                org.junit.jupiter.api.Assertions.assertEquals(4, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationApproveId));
+                org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationRejectId));
+                org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationSelfReviewId));
+                Long reviewRecordId = jdbcTemplate
+                    .queryForObject("SELECT MIN(id) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Long.class, tenantId, applicationApproveId);
+                org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate
+                    .update("UPDATE biz_review_record SET opinion = 'tampered' WHERE id = ?", reviewRecordId));
+                org.junit.jupiter.api.Assertions.assertEquals(5, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_security_audit WHERE tenant_id = ? AND action LIKE 'WORKFLOW_REVIEW_%'", Integer.class, tenantId));
+            });
+        } finally {
+            processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
+        }
+    }
+
+    private void insertReviewApplication(Long tenantId,
+                                         Long applicationId,
+                                         Long merchantId,
+                                         Long owningAgentId,
+                                         Long submittedBy,
+                                         LocalDateTime createTime) {
+        jdbcTemplate
+            .update("""
+                INSERT INTO biz_onboarding_application
+                (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, product_code,
+                 requirement_version, channel_config_version, status, submitted_by, submitted_time,
+                 row_version, create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, 'SYNTHETIC', 'REVIEW', 'REQ-REV-1', 'CFG-REV-1', 'SUBMITTED', ?, ?, 0, ?, 0)
+                """, applicationId, tenantId, "APP-REVIEW-" + applicationId, merchantId, owningAgentId, submittedBy, createTime, createTime);
+    }
+
+    private WorkflowRef startReviewWorkflow(Long tenantId,
+                                            String processKey,
+                                            Long applicationId,
+                                            Long businessVersion,
+                                            Long merchantId,
+                                            Long owningAgentId,
+                                            Long applicantUserId) {
+        return workflowService.start(new StartWorkflowCommand(tenantId, processKey, "%s:MERCHANT_ONBOARDING:%s:%s"
+            .formatted(tenantId, applicationId, businessVersion), Map
+                .of("tenantId", tenantId, "merchantId", merchantId, "applicationId", applicationId, "kycVersion", businessVersion, "channelCode", "SYNTHETIC", "applicantId", applicantUserId, "owningAgentId", owningAgentId, "riskLevel", "LOW", "requiresSupplement", Boolean.FALSE)));
+    }
+
+    private String reviewApplicationStatus(Long tenantId, Long applicationId) {
+        return jdbcTemplate
+            .queryForObject("SELECT status FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?", String.class, tenantId, applicationId);
     }
 
     protected void seedRepresentativeQueryData() {

@@ -183,6 +183,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyWorkflowAdapterCommandsAndQueries();
     }
 
+    @Test
+    void onboardingReviewActionsArePolicyControlledAndImmutable() {
+        verifyOnboardingReviewActionsAndImmutableRecords();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

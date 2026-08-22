@@ -19,6 +19,7 @@ package top.continew.admin.workflow.api;
 import top.continew.admin.workflow.command.ClaimTaskCommand;
 import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
+import top.continew.admin.workflow.command.TransferTaskCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
 import top.continew.admin.workflow.dto.WorkflowPage;
 import top.continew.admin.workflow.dto.WorkflowProcessHistory;
@@ -37,6 +38,10 @@ public interface WorkflowService {
     void unclaim(UnclaimTaskCommand command);
 
     void complete(CompleteTaskCommand command);
+
+    void transfer(TransferTaskCommand command);
+
+    WorkflowTask task(Long tenantId, Long userId, String taskId);
 
     WorkflowPage<WorkflowTask> pageTodo(WorkflowTaskQuery query);
 

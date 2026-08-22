@@ -39,6 +39,7 @@ import top.continew.admin.workflow.api.WorkflowVariablePolicy;
 import top.continew.admin.workflow.command.ClaimTaskCommand;
 import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
+import top.continew.admin.workflow.command.TransferTaskCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
 import top.continew.admin.workflow.dto.WorkflowActivityHistory;
 import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
@@ -181,6 +182,31 @@ public class FlowableWorkflowService implements WorkflowService {
         } catch (FlowableException ex) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.ENGINE_FAILURE);
         }
+    }
+
+    @Override
+    public void transfer(TransferTaskCommand command) {
+        WorkflowActor actor = authorizationPort.requireActor(command.tenantId(), command.actorUserId());
+        WorkflowActor target = authorizationPort.requireActor(command.tenantId(), command.targetUserId());
+        Task task = requireTask(command.tenantId(), command.taskId());
+        requireTaskAccess(actor, task);
+        requireTaskAccess(target, task);
+        if (!actor.flowableUserId().equals(task.getAssignee())) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_ASSIGNED);
+        }
+        try {
+            taskService.setAssignee(task.getId(), target.flowableUserId());
+        } catch (FlowableException ex) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.ENGINE_FAILURE);
+        }
+    }
+
+    @Override
+    public WorkflowTask task(Long tenantId, Long userId, String taskId) {
+        WorkflowActor actor = authorizationPort.requireActor(tenantId, userId);
+        Task task = requireTask(tenantId, taskId);
+        requireTaskAccess(actor, task);
+        return taskViews(List.of(task)).get(0);
     }
 
     @Override

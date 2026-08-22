@@ -43,12 +43,13 @@ class WorkflowVariablePolicyTest {
         variables.put("owningAgentId", 5001L);
         variables.put("riskLevel", "MEDIUM_RISK");
         variables.put("requiresSupplement", Boolean.FALSE);
+        variables.put("reviewAction", "APPROVE");
 
         Map<String, Object> validated = policy.validateAndCopy(variables);
 
         assertEquals(variables, validated);
         assertThrows(UnsupportedOperationException.class, () -> validated.put("tenantId", 2L));
-        assertEquals(9, policy.allowedNames().size());
+        assertEquals(10, policy.allowedNames().size());
     }
 
     @Test

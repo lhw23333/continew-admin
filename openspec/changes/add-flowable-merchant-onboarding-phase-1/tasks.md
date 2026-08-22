@@ -95,7 +95,7 @@
 - [x] 8.2 Implement project-owned workflow commands/DTOs and adapter for start, claim, unclaim, complete, query todo/done, and history
 - [x] 8.3 Implement business-key/workflow mapping with tenant, business type/ID/version, process definition/version, process instance, and unique idempotency
 - [x] 8.4 Implement ContiNew tenant, user ID, role-code candidate group, enabled-user, and agent/merchant-scope resolution for every task query/action
-- [ ] 8.5 Implement approve, reject, request-supplement, resubmit, transfer, and opinion validation with immutable review records
+- [x] 8.5 Implement approve, reject, request-supplement, resubmit, transfer, and opinion validation with immutable review records
 - [ ] 8.6 Implement optimistic concurrent task completion and domain-version conflict handling tests
 - [ ] 8.7 Implement transactional outbox producer/consumer for domain decisions and Flowable commands/events with retries and repair status
 - [ ] 8.8 Implement BPMN deployment verification, stable process keys/node IDs, immutable resource metadata, and in-flight version policy

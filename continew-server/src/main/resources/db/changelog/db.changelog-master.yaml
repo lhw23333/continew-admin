@@ -44,6 +44,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/workflow-mapping-definition.sql
   - include:
+      file: db/changelog/mysql/merchant/review-record-immutability.sql
+  - include:
       file: db/changelog/mysql/merchant/channel-product-config.sql
   - include:
       file: db/changelog/mysql/merchant/agent-pricing.sql

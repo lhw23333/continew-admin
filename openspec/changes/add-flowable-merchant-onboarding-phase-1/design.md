@@ -188,6 +188,24 @@ domain and SHALL NOT be stored in the routing request or workflow variables.
 The initial routing state is `AWAITING_KYC_DRAFT`; onboarding task 7.2 attaches the new KYC draft before workflow
 submission. Ordinary profile updates cannot mutate certified identity, owning agent, or settlement references.
 
+### Decision 14: Use same-branch review with same-user separation of duties
+
+Phase one uses a low-cost approval policy that permits an authorized reviewer in the owning agent branch to review an
+application, but the user who submitted the application cannot approve, reject, or request supplementation for that
+same business version.
+
+- `MERCHANT_REVIEWER` may approve, reject, or request supplementation within authorized merchant scope.
+- `RISK_REVIEWER` has the same review actions and may additionally transfer a task to another enabled, scoped reviewer.
+- The original applicant or merchant operator may resubmit a supplementation task; reviewers cannot manufacture a
+  resubmission on their behalf.
+- Reject, request-supplement, and transfer actions require a sanitized opinion/reason. Supplement requests also require
+  normalized issue codes.
+- High-risk mandatory platform/cross-agent escalation remains configurable future policy; phase one does not require a
+  second approval layer for every application.
+
+Review records are append-only domain evidence. The Flowable task action and domain review record/status update use the
+same database transaction where safe; process completion alone never establishes channel or merchant success.
+
 ## Risks / Trade-offs
 
 - **[Dependency convergence] Flowable and ContiNew may bring incompatible MyBatis/Jackson/Spring transitive versions** → Pin a proven Flowable 7.x patch, run Maven dependency convergence, and execute boot/database tests before domain work.
@@ -221,7 +239,6 @@ submission. Ordinary profile updates cannot mutate certified identity, owning ag
 ## Open Questions
 
 - Which Flowable 7.x patch passes dependency convergence with Spring Boot 3.3.12 and the current ContiNew dependency set?
-- Which roles may approve their own agent branch, and which require cross-agent or platform review?
 - Is AI evaluation advisory only in all phase-one cases, or may a configured low-risk path bypass a human task?
 - What are the exact channel-specific evidence formats, size limits, expiry rules, and callback state maps?
 - What are the limit minimum, maximum, rounding, withdrawal, and expiry rules?

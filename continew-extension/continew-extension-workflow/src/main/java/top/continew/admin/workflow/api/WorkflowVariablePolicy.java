@@ -30,6 +30,7 @@ public class WorkflowVariablePolicy {
 
     private static final Pattern CHANNEL_CODE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,63}");
     private static final Pattern RISK_LEVEL = Pattern.compile("[A-Z][A-Z0-9_]{0,31}");
+    private static final Pattern REVIEW_ACTION = Pattern.compile("APPROVE|REJECT|REQUEST_SUPPLEMENT|RESUBMIT");
     private static final Predicate<Object> POSITIVE_LONG = value -> value instanceof Long number && number > 0;
     private static final Map<String, Predicate<Object>> ALLOWED = Map.ofEntries(Map
         .entry("tenantId", POSITIVE_LONG), Map.entry("merchantId", POSITIVE_LONG), Map
@@ -37,7 +38,8 @@ public class WorkflowVariablePolicy {
                 .entry("channelCode", value -> matches(value, CHANNEL_CODE)), Map
                     .entry("applicantId", POSITIVE_LONG), Map.entry("owningAgentId", POSITIVE_LONG), Map
                         .entry("riskLevel", value -> matches(value, RISK_LEVEL)), Map
-                            .entry("requiresSupplement", value -> value instanceof Boolean));
+                            .entry("requiresSupplement", value -> value instanceof Boolean), Map
+                                .entry("reviewAction", value -> matches(value, REVIEW_ACTION)));
     private static final Set<String> EXPLICITLY_FORBIDDEN_NAMES = Set
         .of("identityNumber", "legalIdentifier", "bankAccount", "bankAccountNumber", "mobile", "mobileNumber", "password", "paymentPassword", "credential", "kyc", "kycJson", "attachmentUrl", "channelPayload", "binary");
 

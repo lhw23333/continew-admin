@@ -44,6 +44,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/workflow-mapping-definition.sql
   - include:
+      file: db/changelog/postgresql/merchant/review-record-immutability.sql
+  - include:
       file: db/changelog/postgresql/merchant/channel-product-config.sql
   - include:
       file: db/changelog/postgresql/merchant/agent-pricing.sql
