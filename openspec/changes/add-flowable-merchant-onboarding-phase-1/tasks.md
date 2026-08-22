@@ -75,7 +75,7 @@
 - [x] 7.4 Implement evidence collection with private file object references, required-type validation, optional attachment limits, and scan status
 - [x] 7.5 Implement versioned legal subject, legal representative, operator, beneficiary, and individual/corporate shareholder commands and validation
 - [x] 7.6 Implement ordinary/accelerated settlement-account modes with encrypted account data and pluggable verification port
-- [ ] 7.7 Implement pricing-version selection and parent-bound revalidation at save and final submission
+- [x] 7.7 Implement pricing-version selection and parent-bound revalidation at save and final submission
 - [ ] 7.8 Implement multiple operating-platform records and independently versioned proof attachments
 - [ ] 7.9 Implement final preview using the exact saved business/KYC/pricing versions and sanitized account/identity summaries
 - [ ] 7.10 Implement idempotent final submission, frozen submitted KYC version, workflow outbox event, and duplicate-click tests

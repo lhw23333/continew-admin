@@ -153,6 +153,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifySettlementAccountModes();
     }
 
+    @Test
+    void onboardingPricingIsExactAndRevalidatedAgainstParent() {
+        verifyOnboardingPricingSelection();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

@@ -46,6 +46,7 @@ public class OnboardingDraftService {
     private final ChannelEligibilityService channelEligibilityService;
     private final MerchantScopeAuthorizationService merchantScopeAuthorizationService;
     private final AgentMerchantDefaultService agentMerchantDefaultService;
+    private final OnboardingPricingValidator pricingValidator;
     private final IdentifierGenerator identifierGenerator;
     private final SecurityAuditWriter securityAuditWriter;
     private final Clock clock = Clock.systemDefaultZone();
@@ -126,6 +127,8 @@ public class OnboardingDraftService {
         if (!current.rowVersion().equals(expectedVersion)) {
             throw new OnboardingDraftConflictException();
         }
+        pricingValidator.requireValid(tenantId, merchant, current, current.pricingVersionId(), LocalDateTime
+            .now(clock));
         List<Integer> normalizedSteps = validateProgress(savedStep, completedSteps);
         LocalDateTime now = LocalDateTime.now(clock);
         if (!draftRepository.updateProgress(tenantId, merchantId, applicationId, current

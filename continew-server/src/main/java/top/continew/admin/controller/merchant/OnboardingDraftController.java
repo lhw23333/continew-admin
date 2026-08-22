@@ -51,6 +51,8 @@ import top.continew.admin.merchant.onboarding.application.KycProfileService;
 import top.continew.admin.merchant.onboarding.application.KycProfileView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
+import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
@@ -77,6 +79,7 @@ public class OnboardingDraftController {
     private final OnboardingEvidenceService onboardingEvidenceService;
     private final KycProfileService kycProfileService;
     private final SettlementAccountService settlementAccountService;
+    private final OnboardingPricingService onboardingPricingService;
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")
@@ -181,6 +184,19 @@ public class OnboardingDraftController {
             .getTenantId(), UserContextHolder.getUserId(), merchantId, applicationId, req.getMode(), req
                 .getAccountHolderName(), req.getBankCode(), req.getBankBranchName(), req.getAccountNumber(), req
                     .getExpectedVersion(), JakartaServletUtil.getClientIP(request)));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "选择草稿定价版本", description = "保存精确定价版本并按父代理商当前生效边界重新校验")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PatchMapping("/{applicationId}/pricing")
+    public OnboardingPricingView selectPricing(@PathVariable Long merchantId,
+                                               @PathVariable Long applicationId,
+                                               @RequestBody @Valid PricingSelectionReq req,
+                                               HttpServletRequest request) {
+        return onboardingPricingService.select(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, req.getPricingVersionId(), req
+                .getExpectedVersion(), JakartaServletUtil.getClientIP(request));
     }
 
     @Getter
@@ -319,6 +335,17 @@ public class OnboardingDraftController {
         @NotBlank
         @Size(max = 64)
         private String accountNumber;
+        @NotNull
+        @PositiveOrZero
+        private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class PricingSelectionReq {
+        @NotNull
+        @Positive
+        private Long pricingVersionId;
         @NotNull
         @PositiveOrZero
         private Long expectedVersion;

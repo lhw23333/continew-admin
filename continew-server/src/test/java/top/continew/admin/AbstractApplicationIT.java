@@ -89,6 +89,8 @@ import top.continew.admin.merchant.onboarding.application.OnboardingDraftService
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
+import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
@@ -223,6 +225,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private SettlementAccountService settlementAccountService;
+
+    @Autowired
+    private OnboardingPricingService onboardingPricingService;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -1849,6 +1854,77 @@ abstract class AbstractApplicationIT {
         });
     }
 
+    protected void verifyOnboardingPricingSelection() {
+        long tenantId = 927L;
+        long rootAgentId = 92701L;
+        long merchantAgentId = 92702L;
+        long siblingAgentId = 92703L;
+        long rootUserId = 92711L;
+        long merchantAgentUserId = 92712L;
+        long merchantId = 927101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PRICING-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "PRICING-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, 92713L, "PRICING-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 927201L, 927202L, "PRICING-MERCHANT", "9"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 18, 0);
+            insertPricingVersion(tenantId, rootAgentId, 927501L, 1, "CHANNEL-Q", "PRODUCT-Q", "0.01000000", "1.00", "0.80000000", baseTime);
+            insertPricingVersion(tenantId, merchantAgentId, 927502L, 1, "CHANNEL-Q", "PRODUCT-Q", "0.02000000", "2.00", "0.50000000", baseTime);
+            insertPricingVersion(tenantId, siblingAgentId, 927503L, 1, "CHANNEL-Q", "PRODUCT-Q", "0.02000000", "2.00", "0.50000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 927601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-Q","productCode":"PRODUCT-Q","pricingVersionId":927502}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(927701L, tenantId, "CHANNEL-Q", "PRODUCT-Q", "CFG-Q-1", "REQ-Q-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-Q", "PRODUCT-Q", "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(927502L, draft.draft().pricingVersionId());
+
+            insertPricingVersion(tenantId, rootAgentId, 927504L, 2, "CHANNEL-Q", "PRODUCT-Q", "0.03000000", "3.00", "0.40000000", baseTime
+                .plusHours(1));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(AgentPricingBoundaryException.class, () -> onboardingDraftService
+                    .saveProgress(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), 2, List
+                        .of(1), 0L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(0L, jdbcTemplate.queryForObject("""
+                SELECT row_version FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, Long.class, tenantId, draft.draft().kycVersionId()));
+
+            insertPricingVersion(tenantId, merchantAgentId, 927505L, 2, "CHANNEL-Q", "PRODUCT-Q", "0.04000000", "4.00", "0.30000000", baseTime
+                .plusHours(2));
+            OnboardingPricingView selected = onboardingPricingService
+                .select(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                    .applicationId(), 927505L, 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(1L, selected.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(927505L, selected.pricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(2, selected.versionNo());
+            OnboardingDraftView saved = onboardingDraftService
+                .saveProgress(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), 2, List
+                    .of(1), 1L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(2L, saved.draft().rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(927505L, saved.draft().pricingVersionId());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(AgentPricingBoundaryException.class, () -> onboardingPricingService
+                    .select(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                        .applicationId(), 927503L, 2L, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'ONBOARDING_PRICING_SELECT'
+                """, Integer.class, tenantId, draft.draft().kycVersionId()));
+        });
+    }
+
     private KycProfileSaveCommand validProfileCommand(Long tenantId,
                                                       Long actorUserId,
                                                       Long merchantId,
@@ -1967,7 +2043,41 @@ abstract class AbstractApplicationIT {
                                       String productCode,
                                       String percentageCost,
                                       LocalDateTime effectiveTime) {
-        String rules = "{\"percentageCost\":" + percentageCost + ",\"fixedFee\":1.00,\"profitShareRatio\":0.50000000}";
+        insertPricingVersion(tenantId, agentId, pricingVersionId, versionNo, channelCode, productCode, percentageCost, "1.00", "0.50000000", effectiveTime);
+    }
+
+    private void insertPricingVersion(Long tenantId,
+                                      Long agentId,
+                                      Long pricingVersionId,
+                                      Integer versionNo,
+                                      String channelCode,
+                                      String productCode,
+                                      String percentageCost,
+                                      String fixedFee,
+                                      String profitShareRatio,
+                                      LocalDateTime effectiveTime) {
+        Long parentId = jdbcTemplate.queryForObject("""
+            SELECT parent_id FROM biz_agent WHERE tenant_id = ? AND id = ? AND deleted = 0
+            """, Long.class, tenantId, agentId);
+        if (parentId != null && parentId > 0) {
+            Integer parentCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_agent_pricing_version
+                WHERE tenant_id = ? AND agent_id = ? AND channel_code = ? AND product_code = ?
+                  AND currency = 'CNY' AND deleted = 0
+                """, Integer.class, tenantId, parentId, channelCode, productCode);
+            if (parentCount != null && parentCount == 0) {
+                jdbcTemplate
+                    .update("""
+                        INSERT INTO biz_agent_pricing_version
+                        (id, tenant_id, agent_id, version_no, channel_code, product_code, currency,
+                         pricing_rules_json, effective_time, status, create_user, create_time, deleted)
+                        VALUES (?, ?, ?, 1, ?, ?, 'CNY',
+                                '{"percentageCost":0.00000000,"fixedFee":0.00,"profitShareRatio":1.00000000}',
+                                ?, 'PUBLISHED', 1, ?, 0)
+                        """, pricingVersionId + 600000000000000000L, tenantId, parentId, channelCode, productCode, effectiveTime, effectiveTime);
+            }
+        }
+        String rules = "{\"percentageCost\":" + percentageCost + ",\"fixedFee\":" + fixedFee + ",\"profitShareRatio\":" + profitShareRatio + "}";
         jdbcTemplate
             .update("""
                 INSERT INTO biz_agent_pricing_version
