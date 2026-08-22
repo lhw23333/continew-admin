@@ -97,6 +97,8 @@ import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionBl
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionCommand;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionResult;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionService;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementDraft;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementService;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
@@ -281,6 +283,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingSubmissionService onboardingSubmissionService;
+
+    @Autowired
+    private OnboardingSupplementService onboardingSupplementService;
 
     @Autowired
     private OnboardingReviewService onboardingReviewService;
@@ -579,6 +584,7 @@ abstract class AbstractApplicationIT {
         long applicationApproveId = 932301L;
         long applicationRejectId = 932302L;
         long applicationSelfReviewId = 932303L;
+        long approveSourceKycVersionId = 1932301L;
         String processKey = "workflow-review-action-test-v1";
         LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 22, 10, 0);
 
@@ -610,9 +616,12 @@ abstract class AbstractApplicationIT {
                 .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 932402L, reviewerUserId, reviewerRoleId, tenantId);
             jdbcTemplate
                 .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 932403L, applicantUserId, reviewerRoleId, tenantId);
-            insertReviewApplication(tenantId, applicationApproveId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
-            insertReviewApplication(tenantId, applicationRejectId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
-            insertReviewApplication(tenantId, applicationSelfReviewId, merchantId, merchantAgentId, applicantUserId, fixtureTime);
+            insertReviewApplication(tenantId, applicationApproveId, merchantId, merchantAgentId, applicantUserId, approveSourceKycVersionId, 1, fixtureTime);
+            insertReviewApplication(tenantId, applicationRejectId, merchantId, merchantAgentId, applicantUserId, 1932302L, 2, fixtureTime);
+            insertReviewApplication(tenantId, applicationSelfReviewId, merchantId, merchantAgentId, applicantUserId, 1932303L, 3, fixtureTime);
+            kycAttachmentRepository
+                .insert(new KycAttachmentDraft(tenantId, approveSourceKycVersionId, "BUSINESS_LICENSE", "private|review/source-license", "source-license.png", "png", "image/png", "image/png", 10L, "8"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, fixtureTime));
         });
 
         String bpmn = """
@@ -667,9 +676,34 @@ abstract class AbstractApplicationIT {
                         .businessKey(), null, true, 1, 20))
                     .items()
                     .get(0);
+                OnboardingSupplementDraft supplementDraft = onboardingSupplementService
+                    .create(tenantId, applicantUserId, merchantId, applicationApproveId, supplementTask
+                        .taskId(), approveSourceKycVersionId, "127.0.0.1");
+                Long supplementKycVersionId = supplementDraft.draft().draft().kycVersionId();
+                org.junit.jupiter.api.Assertions.assertEquals(approveSourceKycVersionId, supplementDraft
+                    .previousKycVersionId());
+                org.junit.jupiter.api.Assertions.assertTrue(supplementDraft.diff().changedFields().isEmpty());
+                org.junit.jupiter.api.Assertions.assertEquals(supplementKycVersionId, onboardingSupplementService
+                    .create(tenantId, applicantUserId, merchantId, applicationApproveId, supplementTask
+                        .taskId(), approveSourceKycVersionId, "127.0.0.1")
+                    .draft()
+                    .draft()
+                    .kycVersionId());
+                org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_kyc_attachment WHERE tenant_id = ? AND kyc_version_id = ? AND deleted = 0", Integer.class, tenantId, supplementKycVersionId));
+                org.junit.jupiter.api.Assertions.assertEquals("SUBMITTED", jdbcTemplate
+                    .queryForObject("SELECT status FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", String.class, tenantId, approveSourceKycVersionId));
+                jdbcTemplate
+                    .update("UPDATE biz_kyc_version SET legal_name = 'Supplemented Legal Name' WHERE tenant_id = ? AND id = ?", tenantId, supplementKycVersionId);
+                org.junit.jupiter.api.Assertions.assertTrue(onboardingSupplementService
+                    .diff(tenantId, applicantUserId, merchantId, applicationApproveId, supplementKycVersionId)
+                    .changedFields()
+                    .contains("LEGAL_NAME"));
                 onboardingReviewService.review(new OnboardingReviewCommand(tenantId, applicantUserId, supplementTask
                     .taskId(), 1L, OnboardingReviewAction.RESUBMIT, "Supplemented requested evidence", List
                         .of(), "127.0.0.1"));
+                org.junit.jupiter.api.Assertions.assertEquals("SUBMITTED", jdbcTemplate
+                    .queryForObject("SELECT status FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", String.class, tenantId, supplementKycVersionId));
                 WorkflowTask returnedReviewTask = workflowService
                     .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, approveFlow
                         .businessKey(), null, false, 1, 20))
@@ -739,15 +773,29 @@ abstract class AbstractApplicationIT {
                                          Long merchantId,
                                          Long owningAgentId,
                                          Long submittedBy,
+                                         Long kycVersionId,
+                                         Integer kycVersionNo,
                                          LocalDateTime createTime) {
         jdbcTemplate
             .update("""
                 INSERT INTO biz_onboarding_application
                 (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, product_code,
-                 requirement_version, channel_config_version, status, submitted_by, submitted_time,
+                 requirement_version, requirement_summary_json, channel_config_version, kyc_version_id,
+                 status, submitted_by, submitted_time,
                  row_version, create_time, deleted)
-                VALUES (?, ?, ?, ?, ?, 'SYNTHETIC', 'REVIEW', 'REQ-REV-1', 'CFG-REV-1', 'SUBMITTED', ?, ?, 0, ?, 0)
-                """, applicationId, tenantId, "APP-REVIEW-" + applicationId, merchantId, owningAgentId, submittedBy, createTime, createTime);
+                VALUES (?, ?, ?, ?, ?, 'SYNTHETIC', 'REVIEW', 'REQ-REV-1',
+                        '{"requiredEvidenceTypes":[],"optionalEvidenceTypes":["BUSINESS_LICENSE"],"maxSupplementAttachments":5,"reuseExcludedFields":[]}',
+                        'CFG-REV-1', ?, 'SUBMITTED', ?, ?, 0, ?, 0)
+                """, applicationId, tenantId, "APP-REVIEW-" + applicationId, merchantId, owningAgentId, kycVersionId, submittedBy, createTime, createTime);
+        jdbcTemplate.update("""
+            INSERT INTO biz_kyc_version
+            (id, tenant_id, merchant_id, onboarding_application_id, version_no, requirement_version, status,
+             saved_step, step_completion_json, legal_name, legal_identifier_masked, license_issue_date,
+             license_expiry_date, business_scope, row_version, create_user, create_time, frozen_time, deleted)
+            VALUES (?, ?, ?, ?, ?, 'REQ-REV-1', 'SUBMITTED', 5, '[1,2,3,4,5]', 'Review Legal Subject',
+                    '913***********0Y92', ?, ?, 'Technology services', 1, ?, ?, ?, 0)
+            """, kycVersionId, tenantId, merchantId, applicationId, kycVersionNo, LocalDate.of(2020, 1, 1), LocalDate
+            .of(2030, 1, 1), submittedBy, createTime, createTime);
     }
 
     private WorkflowRef startReviewWorkflow(Long tenantId,

@@ -22,6 +22,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import top.continew.admin.merchant.master.domain.MerchantDomainException;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementRepository;
+import top.continew.admin.merchant.onboarding.application.SupplementKycSnapshot;
 import top.continew.admin.merchant.security.audit.application.SecurityAuditWriter;
 import top.continew.admin.merchant.security.audit.domain.SecurityAuditRecord;
 import top.continew.admin.merchant.security.audit.domain.SecurityAuditResult;
@@ -56,6 +58,7 @@ public class OnboardingReviewService {
     private final WorkflowMappingService mappingService;
     private final WorkflowAuthorizationPort authorizationPort;
     private final OnboardingReviewRepository reviewRepository;
+    private final OnboardingSupplementRepository supplementRepository;
     private final IdentifierGenerator identifierGenerator;
     private final ObjectMapper objectMapper;
     private final SecurityAuditWriter securityAuditWriter;
@@ -65,6 +68,7 @@ public class OnboardingReviewService {
                                    WorkflowMappingService mappingService,
                                    WorkflowAuthorizationPort authorizationPort,
                                    OnboardingReviewRepository reviewRepository,
+                                   OnboardingSupplementRepository supplementRepository,
                                    IdentifierGenerator identifierGenerator,
                                    ObjectMapper objectMapper,
                                    SecurityAuditWriter securityAuditWriter) {
@@ -72,6 +76,7 @@ public class OnboardingReviewService {
         this.mappingService = mappingService;
         this.authorizationPort = authorizationPort;
         this.reviewRepository = reviewRepository;
+        this.supplementRepository = supplementRepository;
         this.identifierGenerator = identifierGenerator;
         this.objectMapper = objectMapper;
         this.securityAuditWriter = securityAuditWriter;
@@ -90,6 +95,15 @@ public class OnboardingReviewService {
         authorizationPort.requireBusinessAccess(actor, mapping.businessType(), mapping.businessId());
         ReviewDecision decision = decision(command, actor, context);
         LocalDateTime now = LocalDateTime.now(clock);
+        if (OnboardingReviewAction.RESUBMIT.equals(command.action())) {
+            SupplementKycSnapshot supplement = supplementRepository.find(command.tenantId(), context
+                .merchantId(), context.applicationId(), context.kycVersionId())
+                .orElseThrow(() -> new MerchantDomainException("Supplement KYC version is unavailable"));
+            if (!supplementRepository.freeze(command.tenantId(), context.applicationId(), context
+                .kycVersionId(), supplement.rowVersion(), actor.userId(), now)) {
+                throw new MerchantDomainException("Supplement KYC version changed concurrently");
+            }
+        }
         Long reviewRecordId = identifierGenerator.nextId(new Object()).longValue();
         reviewRepository.insert(new ReviewRecordDraft(reviewRecordId, command.tenantId(), mapping
             .businessType(), mapping.businessId(), mapping.businessVersion(), mapping.processInstanceId(), task

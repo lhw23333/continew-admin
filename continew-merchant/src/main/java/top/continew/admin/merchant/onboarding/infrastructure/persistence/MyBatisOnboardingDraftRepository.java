@@ -54,7 +54,7 @@ public class MyBatisOnboardingDraftRepository implements OnboardingDraftReposito
             .eq(OnboardingApplicationDO::getMerchantId, merchantId)
             .eq(OnboardingApplicationDO::getChannelCode, channelCode)
             .eq(OnboardingApplicationDO::getProductCode, productCode)
-            .eq(OnboardingApplicationDO::getStatus, "DRAFT")
+            .in(OnboardingApplicationDO::getStatus, "DRAFT", "SUPPLEMENT_REQUIRED")
             .eq(OnboardingApplicationDO::getActiveDraftGuard, "ACTIVE")
             .eq(OnboardingApplicationDO::getDeleted, 0L)
             .orderByDesc(OnboardingApplicationDO::getCreateTime)
@@ -70,7 +70,7 @@ public class MyBatisOnboardingDraftRepository implements OnboardingDraftReposito
             .eq(OnboardingApplicationDO::getTenantId, tenantId)
             .eq(OnboardingApplicationDO::getMerchantId, merchantId)
             .eq(OnboardingApplicationDO::getId, applicationId)
-            .eq(OnboardingApplicationDO::getStatus, "DRAFT")
+            .in(OnboardingApplicationDO::getStatus, "DRAFT", "SUPPLEMENT_REQUIRED")
             .eq(OnboardingApplicationDO::getDeleted, 0L)
             .one();
         return Optional.ofNullable(application).map(this::toDraft);

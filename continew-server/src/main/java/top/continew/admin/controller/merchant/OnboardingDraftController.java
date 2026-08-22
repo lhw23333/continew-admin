@@ -58,6 +58,9 @@ import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionCommand;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionResult;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionService;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementDiff;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementDraft;
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementService;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
@@ -90,6 +93,7 @@ public class OnboardingDraftController {
     private final OnboardingPricingService onboardingPricingService;
     private final OperatingPlatformService operatingPlatformService;
     private final OnboardingSubmissionService onboardingSubmissionService;
+    private final OnboardingSupplementService onboardingSupplementService;
 
     @Log(ignore = true)
     @Operation(summary = "获取最终确认预览", description = "只读返回精确保存版本的脱敏摘要和提交阻塞原因")
@@ -112,6 +116,30 @@ public class OnboardingDraftController {
             .getTenantId(), UserContextHolder
                 .getUserId(), merchantId, applicationId, req.expectedVersion, req.idempotencyKey, req.traceId, JakartaServletUtil
                     .getClientIP(request)));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "创建或恢复补件草稿", description = "根据已认领的补件任务复制已提交KYC版本")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PostMapping("/{applicationId}/supplements")
+    public OnboardingSupplementDraft createSupplement(@PathVariable Long merchantId,
+                                                      @PathVariable Long applicationId,
+                                                      @RequestBody @Valid SupplementCreateReq req,
+                                                      HttpServletRequest request) {
+        return onboardingSupplementService.create(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, req.taskId, req.previousKycVersionId, JakartaServletUtil
+                .getClientIP(request));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "查询补件版本差异")
+    @SaCheckPermission("merchant:onboarding:create")
+    @GetMapping("/{applicationId}/supplements/{kycVersionId}/diff")
+    public OnboardingSupplementDiff supplementDiff(@PathVariable Long merchantId,
+                                                   @PathVariable Long applicationId,
+                                                   @PathVariable Long kycVersionId) {
+        return onboardingSupplementService.diff(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, kycVersionId);
     }
 
     @Log(ignore = true)
@@ -320,6 +348,17 @@ public class OnboardingDraftController {
         private String idempotencyKey;
         @Size(max = 64)
         private String traceId;
+    }
+
+    @Getter
+    @Setter
+    public static class SupplementCreateReq {
+        @NotBlank
+        @Size(max = 64)
+        private String taskId;
+        @NotNull
+        @Positive
+        private Long previousKycVersionId;
     }
 
     @Getter

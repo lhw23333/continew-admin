@@ -36,6 +36,8 @@ public class KycDraftVersionDO extends TenantBaseDO {
     private Long merchantId;
     private Long onboardingApplicationId;
     private Integer versionNo;
+    private Long previousVersionId;
+    private String supplementTaskId;
     private Long sourceKycVersionId;
     private String reuseProvenanceJson;
     private String requirementVersion;
