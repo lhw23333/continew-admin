@@ -81,6 +81,9 @@ import top.continew.admin.merchant.onboarding.application.EligibleChannel;
 import top.continew.admin.merchant.onboarding.application.KycReuseField;
 import top.continew.admin.merchant.onboarding.application.KycReuseService;
 import top.continew.admin.merchant.onboarding.application.KycReuseSourceView;
+import top.continew.admin.merchant.onboarding.application.KycProfileSaveCommand;
+import top.continew.admin.merchant.onboarding.application.KycProfileService;
+import top.continew.admin.merchant.onboarding.application.KycProfileView;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftConflictException;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
@@ -210,6 +213,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingEvidenceService onboardingEvidenceService;
+
+    @Autowired
+    private KycProfileService kycProfileService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -1630,6 +1636,134 @@ abstract class AbstractApplicationIT {
                 .stream()
                 .anyMatch(item -> "NEW_EVIDENCE".equals(item.evidenceType())));
         });
+    }
+
+    protected void verifyVersionedKycProfile() {
+        long tenantId = 925L;
+        long rootAgentId = 92501L;
+        long merchantAgentId = 92502L;
+        long rootUserId = 92511L;
+        long merchantAgentUserId = 92512L;
+        long merchantId = 925101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PROFILE-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "PROFILE-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 925201L, 925202L, "PROFILE-MERCHANT", "7"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 14, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 925501L, 1, "CHANNEL-P", "PRODUCT-P", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 925601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-P","productCode":"PRODUCT-P","pricingVersionId":925501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(925701L, tenantId, "CHANNEL-P", "PRODUCT-P", "CFG-P-1", "REQ-P-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-P", "PRODUCT-P", "127.0.0.1");
+
+            KycProfileSaveCommand command = validProfileCommand(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), 0L);
+            KycProfileView saved = kycProfileService.save(command);
+            org.junit.jupiter.api.Assertions.assertEquals(1L, saved.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("913***********0Y92", saved.legalIdentifierMasked());
+            org.junit.jupiter.api.Assertions.assertEquals(3, saved.persons().size());
+            org.junit.jupiter.api.Assertions.assertTrue(saved.persons()
+                .stream()
+                .allMatch(person -> person.identityNumberMasked().contains("*")));
+            org.junit.jupiter.api.Assertions.assertTrue(saved.persons()
+                .stream()
+                .allMatch(person -> person.mobileMasked().contains("*")));
+            org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("100.00"), saved.shareholders()
+                .stream()
+                .map(KycProfileView.ShareholderView::ownershipPercent)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+
+            byte[] legalCiphertext = jdbcTemplate.queryForObject("""
+                SELECT legal_identifier_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, byte[].class, tenantId, draft.draft().kycVersionId());
+            byte[] personCiphertext = jdbcTemplate.queryForObject("""
+                SELECT person_payload_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, byte[].class, tenantId, draft.draft().kycVersionId());
+            byte[] shareholderCiphertext = jdbcTemplate.queryForObject("""
+                SELECT shareholder_payload_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, byte[].class, tenantId, draft.draft().kycVersionId());
+            org.junit.jupiter.api.Assertions.assertNotNull(legalCiphertext);
+            org.junit.jupiter.api.Assertions.assertNotNull(personCiphertext);
+            org.junit.jupiter.api.Assertions.assertNotNull(shareholderCiphertext);
+            org.junit.jupiter.api.Assertions
+                .assertFalse(new String(personCiphertext, java.nio.charset.StandardCharsets.UTF_8)
+                    .contains("13800000001"));
+            org.junit.jupiter.api.Assertions
+                .assertFalse(new String(shareholderCiphertext, java.nio.charset.StandardCharsets.UTF_8)
+                    .contains("Shareholder One"));
+            String payloadKeyVersion = jdbcTemplate.queryForObject("""
+                SELECT payload_key_version FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, draft.draft().kycVersionId());
+            org.junit.jupiter.api.Assertions.assertNotNull(payloadKeyVersion);
+            org.junit.jupiter.api.Assertions.assertTrue(payloadKeyVersion.startsWith("env://"));
+
+            org.junit.jupiter.api.Assertions
+                .assertThrows(OnboardingDraftConflictException.class, () -> kycProfileService.save(command));
+            KycProfileSaveCommand missingBeneficiary = new KycProfileSaveCommand(command.tenantId(), command
+                .actorUserId(), command.merchantId(), command.applicationId(), command.legalName(), command
+                    .legalIdentifier(), command.licenseIssueDate(), command.licenseExpiryDate(), command
+                        .businessScope(), command.address(), command.persons()
+                            .stream()
+                            .filter(person -> !KycProfileSaveCommand.PersonRole.BENEFICIAL_OWNER.equals(person.role()))
+                            .toList(), command.shareholders(), 1L, command.ipAddress());
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> kycProfileService
+                .save(missingBeneficiary));
+            List<KycProfileSaveCommand.Person> expiredPersons = new ArrayList<>(command.persons());
+            KycProfileSaveCommand.Person operator = expiredPersons.get(1);
+            expiredPersons.set(1, new KycProfileSaveCommand.Person(operator.role(), operator.name(), operator
+                .identityNumber(), operator.mobile(), operator.documentValidFrom(), LocalDate.of(2026, 8, 21)));
+            KycProfileSaveCommand expired = new KycProfileSaveCommand(command.tenantId(), command.actorUserId(), command
+                .merchantId(), command.applicationId(), command.legalName(), command.legalIdentifier(), command
+                    .licenseIssueDate(), command.licenseExpiryDate(), command.businessScope(), command
+                        .address(), expiredPersons, command.shareholders(), 1L, command.ipAddress());
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> kycProfileService
+                .save(expired));
+            List<KycProfileSaveCommand.Shareholder> invalidShareholders = List
+                .of(new KycProfileSaveCommand.Shareholder(KycProfileSaveCommand.ShareholderType.INDIVIDUAL, "Shareholder One", "110101198001011234", new BigDecimal("90.00")));
+            KycProfileSaveCommand invalidOwnership = new KycProfileSaveCommand(command.tenantId(), command
+                .actorUserId(), command.merchantId(), command.applicationId(), command.legalName(), command
+                    .legalIdentifier(), command.licenseIssueDate(), command.licenseExpiryDate(), command
+                        .businessScope(), command.address(), command.persons(), invalidShareholders, 1L, command
+                            .ipAddress());
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> kycProfileService
+                .save(invalidOwnership));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'KYC_PROFILE_SAVE'
+                """, Integer.class, tenantId, draft.draft().kycVersionId()));
+        });
+    }
+
+    private KycProfileSaveCommand validProfileCommand(Long tenantId,
+                                                      Long actorUserId,
+                                                      Long merchantId,
+                                                      Long applicationId,
+                                                      Long expectedVersion) {
+        List<KycProfileSaveCommand.Person> persons = List
+            .of(new KycProfileSaveCommand.Person(KycProfileSaveCommand.PersonRole.LEGAL_REPRESENTATIVE, "Legal Representative", "110101199001011234", "13800000001", LocalDate
+                .of(2020, 1, 1), LocalDate
+                    .of(2030, 1, 1)), new KycProfileSaveCommand.Person(KycProfileSaveCommand.PersonRole.OPERATOR, "KYC Operator", "110101199002021235", "13800000002", LocalDate
+                        .of(2020, 1, 1), LocalDate
+                            .of(2030, 1, 1)), new KycProfileSaveCommand.Person(KycProfileSaveCommand.PersonRole.BENEFICIAL_OWNER, "Beneficial Owner", "110101199003031236", "13800000003", LocalDate
+                                .of(2020, 1, 1), LocalDate.of(2030, 1, 1)));
+        List<KycProfileSaveCommand.Shareholder> shareholders = List
+            .of(new KycProfileSaveCommand.Shareholder(KycProfileSaveCommand.ShareholderType.INDIVIDUAL, "Shareholder One", "110101198001011234", new BigDecimal("60.00")), new KycProfileSaveCommand.Shareholder(KycProfileSaveCommand.ShareholderType.CORPORATE, "Corporate Shareholder", "91350211M000100Y43", new BigDecimal("40.00")));
+        return new KycProfileSaveCommand(tenantId, actorUserId, merchantId, applicationId, "Profile Legal Subject", "91350211M000100Y92", LocalDate
+            .of(2020, 1, 1), LocalDate
+                .of(2030, 1, 1), "Technology services", new KycProfileSaveCommand.Address("Registered Address", "Shanghai", "Operating Address"), persons, shareholders, expectedVersion, "127.0.0.1");
     }
 
     private void insertQueryUser(Long tenantId, Long userId, String username) {

@@ -25,6 +25,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -45,12 +46,17 @@ import top.continew.admin.merchant.onboarding.application.KycReuseField;
 import top.continew.admin.merchant.onboarding.application.KycReuseResult;
 import top.continew.admin.merchant.onboarding.application.KycReuseService;
 import top.continew.admin.merchant.onboarding.application.KycReuseSourceView;
+import top.continew.admin.merchant.onboarding.application.KycProfileSaveCommand;
+import top.continew.admin.merchant.onboarding.application.KycProfileService;
+import top.continew.admin.merchant.onboarding.application.KycProfileView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.starter.log.annotation.Log;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 
@@ -65,6 +71,7 @@ public class OnboardingDraftController {
     private final OnboardingDraftService onboardingDraftService;
     private final KycReuseService kycReuseService;
     private final OnboardingEvidenceService onboardingEvidenceService;
+    private final KycProfileService kycProfileService;
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")
@@ -131,6 +138,32 @@ public class OnboardingDraftController {
             .getUserId(), merchantId, applicationId);
     }
 
+    @Log(ignore = true)
+    @Operation(summary = "保存KYC主体与人员股东资料", description = "敏感标识、手机号、地址、人员和股东结构在服务端加密落库")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PatchMapping("/{applicationId}/profile")
+    public KycProfileView saveProfile(@PathVariable Long merchantId,
+                                      @PathVariable Long applicationId,
+                                      @RequestBody @Valid KycProfileReq req,
+                                      HttpServletRequest request) {
+        return kycProfileService.save(new KycProfileSaveCommand(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, req.getLegalName(), req.getLegalIdentifier(), req
+                .getLicenseIssueDate(), req.getLicenseExpiryDate(), req
+                    .getBusinessScope(), new KycProfileSaveCommand.Address(req.getAddress().getRegisteredAddress(), req
+                        .getAddress()
+                        .getOperatingRegion(), req.getAddress().getOperatingAddress()), req.getPersons()
+                            .stream()
+                            .map(person -> new KycProfileSaveCommand.Person(person.getRole(), person.getName(), person
+                                .getIdentityNumber(), person.getMobile(), person.getDocumentValidFrom(), person
+                                    .getDocumentValidTo()))
+                            .toList(), req.getShareholders()
+                                .stream()
+                                .map(shareholder -> new KycProfileSaveCommand.Shareholder(shareholder
+                                    .getType(), shareholder.getName(), shareholder.getIdentifier(), shareholder
+                                        .getOwnershipPercent()))
+                                .toList(), req.getExpectedVersion(), JakartaServletUtil.getClientIP(request)));
+    }
+
     @Getter
     @Setter
     public static class DraftCreateReq {
@@ -169,5 +202,84 @@ public class OnboardingDraftController {
         @NotNull
         @PositiveOrZero
         private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class KycProfileReq {
+        @NotBlank
+        @Size(max = 200)
+        private String legalName;
+        @NotBlank
+        @Size(max = 64)
+        private String legalIdentifier;
+        @NotNull
+        private LocalDate licenseIssueDate;
+        @NotNull
+        private LocalDate licenseExpiryDate;
+        @NotBlank
+        @Size(max = 2000)
+        private String businessScope;
+        @NotNull
+        @Valid
+        private AddressReq address;
+        @NotEmpty
+        @Size(max = 50)
+        private List<@Valid PersonReq> persons;
+        @NotNull
+        @Size(max = 100)
+        private List<@Valid ShareholderReq> shareholders;
+        @NotNull
+        @PositiveOrZero
+        private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class AddressReq {
+        @NotBlank
+        @Size(max = 255)
+        private String registeredAddress;
+        @NotBlank
+        @Size(max = 100)
+        private String operatingRegion;
+        @NotBlank
+        @Size(max = 255)
+        private String operatingAddress;
+    }
+
+    @Getter
+    @Setter
+    public static class PersonReq {
+        @NotNull
+        private KycProfileSaveCommand.PersonRole role;
+        @NotBlank
+        @Size(max = 100)
+        private String name;
+        @NotBlank
+        @Size(max = 64)
+        private String identityNumber;
+        @NotBlank
+        @Size(max = 32)
+        private String mobile;
+        @NotNull
+        private LocalDate documentValidFrom;
+        @NotNull
+        private LocalDate documentValidTo;
+    }
+
+    @Getter
+    @Setter
+    public static class ShareholderReq {
+        @NotNull
+        private KycProfileSaveCommand.ShareholderType type;
+        @NotBlank
+        @Size(max = 200)
+        private String name;
+        @NotBlank
+        @Size(max = 64)
+        private String identifier;
+        @NotNull
+        private BigDecimal ownershipPercent;
     }
 }

@@ -143,6 +143,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingEvidenceCollection();
     }
 
+    @Test
+    void kycProfileIsValidatedVersionedAndEncrypted() {
+        verifyVersionedKycProfile();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

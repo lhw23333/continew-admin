@@ -50,6 +50,10 @@ public class KycDraftVersionDO extends TenantBaseDO {
     private LocalDate licenseIssueDate;
     private LocalDate licenseExpiryDate;
     private String businessScope;
+    private byte[] addressPayloadCiphertext;
+    private byte[] personPayloadCiphertext;
+    private byte[] shareholderPayloadCiphertext;
+    private String payloadKeyVersion;
     private Long pricingVersionId;
     private LocalDateTime frozenTime;
     private Long rowVersion;

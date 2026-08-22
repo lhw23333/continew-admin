@@ -42,6 +42,16 @@ public final class SensitiveValueProtector {
             .keyVersion()));
     }
 
+    /** Encrypts a structured sensitive payload without creating a searchable hash or display value. */
+    public SensitiveDataCipher.EncryptedData encryptPayload(String purpose, String normalizedPayload) {
+        return cipher.encrypt(purpose, normalizedPayload);
+    }
+
+    /** Decrypts a structured sensitive payload for an explicitly authorized domain operation. */
+    public String decryptPayload(String purpose, SensitiveDataCipher.EncryptedData encryptedData) {
+        return cipher.decrypt(purpose, encryptedData);
+    }
+
     public record ProtectedData(byte[] ciphertext, String keyVersion, String normalizedHash, String hashKeyVersion,
                                 String maskedValue) {
         public ProtectedData {

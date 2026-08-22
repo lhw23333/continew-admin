@@ -149,6 +149,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingEvidenceCollection();
     }
 
+    @Test
+    void kycProfileIsValidatedVersionedAndEncrypted() {
+        verifyVersionedKycProfile();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()
