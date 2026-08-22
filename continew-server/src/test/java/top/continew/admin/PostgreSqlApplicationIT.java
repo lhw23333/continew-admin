@@ -154,6 +154,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyVersionedKycProfile();
     }
 
+    @Test
+    void settlementAccountModesAreEncryptedAndVerified() {
+        verifySettlementAccountModes();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

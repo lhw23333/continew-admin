@@ -89,6 +89,10 @@ import top.continew.admin.merchant.onboarding.application.OnboardingDraftService
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountView;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
@@ -216,6 +220,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private KycProfileService kycProfileService;
+
+    @Autowired
+    private SettlementAccountService settlementAccountService;
+
+    @MockBean
+    private SettlementAccountVerificationPort settlementAccountVerificationPort;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -1743,6 +1753,98 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM biz_security_audit
                 WHERE tenant_id = ? AND object_id = ? AND action = 'KYC_PROFILE_SAVE'
+                """, Integer.class, tenantId, draft.draft().kycVersionId()));
+        });
+    }
+
+    protected void verifySettlementAccountModes() {
+        long tenantId = 926L;
+        long rootAgentId = 92601L;
+        long merchantAgentId = 92602L;
+        long rootUserId = 92611L;
+        long merchantAgentUserId = 92612L;
+        long merchantId = 926101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "SETTLEMENT-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "SETTLEMENT-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 926201L, 926202L, "SETTLEMENT-MERCHANT", "8"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 16, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 926501L, 1, "CHANNEL-S", "PRODUCT-S", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 926601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-S","productCode":"PRODUCT-S","pricingVersionId":926501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(926701L, tenantId, "CHANNEL-S", "PRODUCT-S", "CFG-S-1", "REQ-S-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-S", "PRODUCT-S", "127.0.0.1");
+
+            org.mockito.Mockito.when(settlementAccountVerificationPort.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.VERIFIED, "VERIFY-926-1", "SYNTHETIC-V1"));
+            SettlementAccountSaveCommand ordinary = new SettlementAccountSaveCommand(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), SettlementAccountVerificationPort.SettlementMode.ORDINARY, "Profile Legal Subject", "BANK-001", "Shanghai Branch", "6222020200000000", 0L, "127.0.0.1");
+            SettlementAccountView verified = settlementAccountService.save(ordinary);
+            org.junit.jupiter.api.Assertions.assertEquals(1L, verified.rowVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("6222********0000", verified.accountNumberMasked());
+            org.junit.jupiter.api.Assertions
+                .assertEquals(SettlementAccountVerificationPort.SettlementVerificationStatus.VERIFIED, verified
+                    .verificationStatus());
+            org.junit.jupiter.api.Assertions.assertNotNull(verified.verifiedTime());
+            byte[] accountCiphertext = jdbcTemplate.queryForObject("""
+                SELECT settlement_account_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, byte[].class, tenantId, draft.draft().kycVersionId());
+            byte[] payloadCiphertext = jdbcTemplate.queryForObject("""
+                SELECT settlement_payload_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, byte[].class, tenantId, draft.draft().kycVersionId());
+            org.junit.jupiter.api.Assertions.assertNotNull(accountCiphertext);
+            org.junit.jupiter.api.Assertions.assertNotNull(payloadCiphertext);
+            org.junit.jupiter.api.Assertions
+                .assertFalse(new String(accountCiphertext, java.nio.charset.StandardCharsets.UTF_8)
+                    .contains("6222020200000000"));
+            org.junit.jupiter.api.Assertions
+                .assertFalse(new String(payloadCiphertext, java.nio.charset.StandardCharsets.UTF_8)
+                    .contains("Profile Legal Subject"));
+            org.junit.jupiter.api.Assertions.assertEquals("VERIFIED", jdbcTemplate.queryForObject("""
+                SELECT settlement_verification_status FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, draft.draft().kycVersionId()));
+
+            org.mockito.Mockito.when(settlementAccountVerificationPort.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.FAILED, "VERIFY-926-FAIL", "SYNTHETIC-V1"));
+            SettlementAccountSaveCommand failed = new SettlementAccountSaveCommand(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), SettlementAccountVerificationPort.SettlementMode.ACCELERATED, "Wrong Holder", "BANK-001", "Shanghai Branch", "6222020200000001", 1L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> settlementAccountService
+                .save(failed));
+            org.junit.jupiter.api.Assertions.assertEquals(1L, jdbcTemplate.queryForObject("""
+                SELECT row_version FROM biz_kyc_version WHERE tenant_id = ? AND id = ?
+                """, Long.class, tenantId, draft.draft().kycVersionId()));
+
+            org.mockito.Mockito.when(settlementAccountVerificationPort.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.PENDING, "VERIFY-926-PENDING", "ASYNC-V1"));
+            SettlementAccountSaveCommand accelerated = new SettlementAccountSaveCommand(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), SettlementAccountVerificationPort.SettlementMode.ACCELERATED, "Profile Legal Subject", "BANK-002", "Accelerated Branch", "6222020200000002", 1L, "127.0.0.1");
+            SettlementAccountView pending = settlementAccountService.save(accelerated);
+            org.junit.jupiter.api.Assertions.assertEquals(2L, pending.rowVersion());
+            org.junit.jupiter.api.Assertions
+                .assertEquals(SettlementAccountVerificationPort.SettlementVerificationStatus.PENDING, pending
+                    .verificationStatus());
+            org.junit.jupiter.api.Assertions.assertNull(pending.verifiedTime());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(OnboardingDraftConflictException.class, () -> settlementAccountService.save(accelerated));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'SETTLEMENT_ACCOUNT_SAVE'
                 """, Integer.class, tenantId, draft.draft().kycVersionId()));
         });
     }

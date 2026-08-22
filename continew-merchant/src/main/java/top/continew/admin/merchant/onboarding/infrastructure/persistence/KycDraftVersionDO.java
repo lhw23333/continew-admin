@@ -19,6 +19,7 @@ package top.continew.admin.merchant.onboarding.infrastructure.persistence;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import top.continew.admin.common.base.model.entity.TenantBaseDO;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
 
 import java.io.Serial;
 import java.time.LocalDate;
@@ -55,6 +56,18 @@ public class KycDraftVersionDO extends TenantBaseDO {
     private byte[] shareholderPayloadCiphertext;
     private String payloadKeyVersion;
     private Long pricingVersionId;
+    private byte[] settlementAccountCiphertext;
+    private String settlementAccountHash;
+    private String settlementHashKeyVersion;
+    private String settlementAccountMasked;
+    private String settlementKeyVersion;
+    private SettlementAccountVerificationPort.SettlementMode settlementMode;
+    private SettlementAccountVerificationPort.SettlementVerificationStatus settlementVerificationStatus;
+    private String settlementVerificationReference;
+    private String settlementVerifierVersion;
+    private LocalDateTime settlementVerifiedTime;
+    private byte[] settlementPayloadCiphertext;
+    private String settlementPayloadKeyVersion;
     private LocalDateTime frozenTime;
     private Long rowVersion;
 }

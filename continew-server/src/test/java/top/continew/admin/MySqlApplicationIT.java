@@ -148,6 +148,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyVersionedKycProfile();
     }
 
+    @Test
+    void settlementAccountModesAreEncryptedAndVerified() {
+        verifySettlementAccountModes();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

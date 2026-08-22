@@ -51,6 +51,10 @@ import top.continew.admin.merchant.onboarding.application.KycProfileService;
 import top.continew.admin.merchant.onboarding.application.KycProfileView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
+import top.continew.admin.merchant.onboarding.application.SettlementAccountView;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.starter.log.annotation.Log;
@@ -72,6 +76,7 @@ public class OnboardingDraftController {
     private final KycReuseService kycReuseService;
     private final OnboardingEvidenceService onboardingEvidenceService;
     private final KycProfileService kycProfileService;
+    private final SettlementAccountService settlementAccountService;
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")
@@ -162,6 +167,20 @@ public class OnboardingDraftController {
                                     .getType(), shareholder.getName(), shareholder.getIdentifier(), shareholder
                                         .getOwnershipPercent()))
                                 .toList(), req.getExpectedVersion(), JakartaServletUtil.getClientIP(request)));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "保存结算账户", description = "账户号独立加密，户名和银行信息整体加密并通过可插拔端口验证")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PatchMapping("/{applicationId}/settlement-account")
+    public SettlementAccountView saveSettlementAccount(@PathVariable Long merchantId,
+                                                       @PathVariable Long applicationId,
+                                                       @RequestBody @Valid SettlementAccountReq req,
+                                                       HttpServletRequest request) {
+        return settlementAccountService.save(new SettlementAccountSaveCommand(UserContextHolder
+            .getTenantId(), UserContextHolder.getUserId(), merchantId, applicationId, req.getMode(), req
+                .getAccountHolderName(), req.getBankCode(), req.getBankBranchName(), req.getAccountNumber(), req
+                    .getExpectedVersion(), JakartaServletUtil.getClientIP(request)));
     }
 
     @Getter
@@ -281,5 +300,27 @@ public class OnboardingDraftController {
         private String identifier;
         @NotNull
         private BigDecimal ownershipPercent;
+    }
+
+    @Getter
+    @Setter
+    public static class SettlementAccountReq {
+        @NotNull
+        private SettlementAccountVerificationPort.SettlementMode mode;
+        @NotBlank
+        @Size(max = 200)
+        private String accountHolderName;
+        @NotBlank
+        @Size(max = 64)
+        private String bankCode;
+        @NotBlank
+        @Size(max = 200)
+        private String bankBranchName;
+        @NotBlank
+        @Size(max = 64)
+        private String accountNumber;
+        @NotNull
+        @PositiveOrZero
+        private Long expectedVersion;
     }
 }

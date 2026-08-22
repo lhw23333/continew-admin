@@ -20,6 +20,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/onboarding-evidence.sql
   - include:
+      file: db/changelog/mysql/merchant/settlement-account.sql
+  - include:
       file: db/changelog/mysql/merchant/merchant-query-projection.sql
   - include:
       file: db/changelog/mysql/merchant/agent-identity.sql
