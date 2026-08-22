@@ -89,6 +89,8 @@ import top.continew.admin.merchant.onboarding.application.OnboardingDraftService
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreview;
+import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreviewService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
@@ -221,6 +223,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingEvidenceService onboardingEvidenceService;
+
+    @Autowired
+    private OnboardingFinalPreviewService onboardingFinalPreviewService;
 
     @Autowired
     private KycProfileService kycProfileService;
@@ -2032,6 +2037,225 @@ abstract class AbstractApplicationIT {
                 WHERE tenant_id = ? AND action = 'OPERATING_PLATFORM_PROOF_LINK'
                 """, Integer.class, tenantId));
         });
+    }
+
+    protected void verifyOnboardingFinalPreview() {
+        long tenantId = 929L;
+        long rootAgentId = 92901L;
+        long merchantAgentId = 92902L;
+        long siblingAgentId = 92903L;
+        long rootUserId = 92911L;
+        long merchantAgentUserId = 92912L;
+        long siblingAgentUserId = 92913L;
+        long merchantId = 929101L;
+        long otherMerchantId = 929102L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PREVIEW-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "PREVIEW-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingAgentUserId, "PREVIEW-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 929201L, 929202L, "PREVIEW-MERCHANT", "a"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(otherMerchantId, tenantId, siblingAgentId, 929203L, 929204L, "PREVIEW-OTHER", "b"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 20, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 929501L, 1, "CHANNEL-V", "PRODUCT-V", "0.02000000", "2.00", "0.50000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 929601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-V","productCode":"PRODUCT-V","pricingVersionId":929501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(929701L, tenantId, "CHANNEL-V", "PRODUCT-V", "CFG-V-1", "REQ-V-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-V", "PRODUCT-V", "127.0.0.1");
+            KycProfileSaveCommand profileCommand = validProfileCommand(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), 0L);
+            kycProfileService.save(profileCommand);
+
+            org.mockito.Mockito.when(settlementAccountVerificationPort.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.VERIFIED, "VERIFY-929-1", "SYNTHETIC-V1"));
+            settlementAccountService
+                .save(new SettlementAccountSaveCommand(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                    .applicationId(), SettlementAccountVerificationPort.SettlementMode.ORDINARY, "Profile Legal Subject", "BANK-929", "Preview Branch", "6222020200000929", 1L, "127.0.0.1"));
+
+            KycAttachment license = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "BUSINESS_LICENSE", "private|preview/license", "license.png", "png", "image/png", "image/png", 10L, "1"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, baseTime));
+            KycAttachment legalFront = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "LEGAL_REPRESENTATIVE_ID_FRONT", "private|preview/legal-front", "legal-front.png", "png", "image/png", "image/png", 10L, "2"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 2, baseTime));
+            KycAttachment firstProof = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "SUPPLEMENT", "private|preview/store-a", "store-a.png", "png", "image/png", "image/png", 10L, "3"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 3, baseTime));
+            KycAttachment secondProof = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "SUPPLEMENT", "private|preview/store-b", "store-b.png", "png", "image/png", "image/png", 10L, "4"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 4, baseTime));
+            OperatingPlatform first = operatingPlatformService.create(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), "TAOBAO", "Preview Store A", "https://preview-a.example.com", "PREVIEW-A", OperatingPlatform.CertificationStatus.CERTIFIED, "127.0.0.1");
+            OperatingPlatform second = operatingPlatformService.create(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), "DOUYIN", "Preview Store B", "https://preview-b.example.com", "PREVIEW-B", OperatingPlatform.CertificationStatus.CERTIFIED, "127.0.0.1");
+            operatingPlatformService.linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), first.id(), firstProof.id(), "SUPPLEMENT", "127.0.0.1");
+            operatingPlatformService.linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), second.id(), secondProof.id(), "SUPPLEMENT", "127.0.0.1");
+            onboardingDraftService.saveProgress(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), 5, List.of(1, 2, 3, 4, 5), 2L, "127.0.0.1");
+
+            int workflowBefore = jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ?", Integer.class, tenantId);
+            int outboxBefore = jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_outbox_event WHERE tenant_id = ?", Integer.class, tenantId);
+            int channelBefore = jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ?", Integer.class, tenantId);
+            OnboardingFinalPreview ready = onboardingFinalPreviewService
+                .preview(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertTrue(ready.readyForSubmission());
+            org.junit.jupiter.api.Assertions.assertTrue(ready.blockers().isEmpty());
+            org.junit.jupiter.api.Assertions.assertEquals(draft.draft().kycVersionId(), ready.kyc().kycVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(929501L, ready.pricing().pricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals("913***********0Y92", ready.kyc().legalIdentifierMasked());
+            org.junit.jupiter.api.Assertions.assertEquals("6222********0929", ready.settlement().accountNumberMasked());
+            org.junit.jupiter.api.Assertions.assertEquals(List.of("TAOBAO", "DOUYIN"), ready.operatingPlatforms()
+                .stream()
+                .map(OnboardingFinalPreview.OperatingPlatformSummary::platformCode)
+                .toList());
+            String responseJson = org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> applicationContext
+                .getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(ready));
+            org.junit.jupiter.api.Assertions.assertFalse(responseJson.contains("91350211M000100Y92"));
+            org.junit.jupiter.api.Assertions.assertFalse(responseJson.contains("6222020200000929"));
+            org.junit.jupiter.api.Assertions.assertFalse(responseJson.contains("13800000001"));
+            org.junit.jupiter.api.Assertions.assertFalse(responseJson.contains("private|preview"));
+
+            insertPricingVersion(tenantId, merchantAgentId, 929504L, 2, "CHANNEL-V", "PRODUCT-V", "0.02500000", "2.50", "0.45000000", baseTime
+                .plusMinutes(30));
+            OnboardingFinalPreview exactVersion = onboardingFinalPreviewService
+                .preview(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertTrue(exactVersion.readyForSubmission());
+            org.junit.jupiter.api.Assertions.assertEquals(929501L, exactVersion.pricing().pricingVersionId());
+            org.junit.jupiter.api.Assertions.assertEquals(draft.draft().kycVersionId(), exactVersion.kyc()
+                .kycVersionId());
+
+            onboardingFinalPreviewService.preview(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals(workflowBefore, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ?", Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(outboxBefore, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_outbox_event WHERE tenant_id = ?", Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(channelBefore, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ?", Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingFinalPreviewService
+                    .preview(tenantId, siblingAgentUserId, merchantId, draft.draft().applicationId()));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingFinalPreviewService
+                    .preview(tenantId, merchantAgentUserId, otherMerchantId, draft.draft().applicationId()));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingFinalPreviewService
+                    .preview(tenantId, merchantAgentUserId, merchantId, 929999999L));
+
+            byte[] addressPayload = jdbcTemplate
+                .queryForObject("SELECT address_payload_ciphertext FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", byte[].class, tenantId, draft
+                    .draft()
+                    .kycVersionId());
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET address_payload_ciphertext = NULL WHERE tenant_id = ? AND id = ?", tenantId, draft
+                    .draft()
+                    .kycVersionId());
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "KYC_PROFILE_INCOMPLETE");
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET address_payload_ciphertext = ? WHERE tenant_id = ? AND id = ?", addressPayload, tenantId, draft
+                    .draft()
+                    .kycVersionId());
+
+            jdbcTemplate
+                .update("UPDATE biz_kyc_attachment SET scan_status = 'UNAVAILABLE', validation_status = 'QUARANTINED' WHERE tenant_id = ? AND id = ?", tenantId, legalFront
+                    .id());
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "EVIDENCE_INCOMPLETE");
+            jdbcTemplate
+                .update("UPDATE biz_kyc_attachment SET scan_status = 'CLEAN', validation_status = 'VALID' WHERE tenant_id = ? AND id = ?", tenantId, legalFront
+                    .id());
+
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET settlement_verification_status = 'PENDING', settlement_verified_time = NULL WHERE tenant_id = ? AND id = ?", tenantId, draft
+                    .draft()
+                    .kycVersionId());
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "SETTLEMENT_NOT_VERIFIED");
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET settlement_verification_status = 'VERIFIED', settlement_verified_time = ? WHERE tenant_id = ? AND id = ?", baseTime, tenantId, draft
+                    .draft()
+                    .kycVersionId());
+
+            insertChannelProductVersion(929702L, tenantId, "CHANNEL-V", "PRODUCT-V", "CFG-V-2", "REQ-V-2", "[\"ENTERPRISE\"]", "ENABLED", baseTime
+                .plusHours(1));
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "REQUIREMENTS_CHANGED");
+
+            insertChannelProductVersion(929703L, tenantId, "CHANNEL-V", "PRODUCT-V", "CFG-V-3", "REQ-V-3", "[\"ENTERPRISE\"]", "DISABLED", baseTime
+                .plusHours(2));
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "CHANNEL_INELIGIBLE");
+
+            insertPricingVersion(tenantId, rootAgentId, 929502L, 2, "CHANNEL-V", "PRODUCT-V", "0.03000000", "3.00", "0.40000000", baseTime
+                .plusHours(3));
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "PRICING_INVALID");
+
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET license_expiry_date = ? WHERE tenant_id = ? AND id = ?", LocalDate
+                    .of(2026, 8, 21), tenantId, draft.draft().kycVersionId());
+            assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), "LICENSE_EXPIRED");
+            jdbcTemplate
+                .update("UPDATE biz_kyc_version SET license_expiry_date = ? WHERE tenant_id = ? AND id = ?", LocalDate
+                    .of(2030, 1, 1), tenantId, draft.draft().kycVersionId());
+
+            jdbcTemplate
+                .update("UPDATE biz_kyc_attachment SET scan_status = 'UNAVAILABLE', validation_status = 'QUARANTINED' WHERE tenant_id = ? AND id = ?", tenantId, firstProof
+                    .id());
+            OnboardingFinalPreview incompletePlatform = assertPreviewBlocker(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), "PLATFORM_PROOF_INCOMPLETE");
+            org.junit.jupiter.api.Assertions.assertTrue(incompletePlatform.operatingPlatforms()
+                .stream()
+                .filter(platform -> "TAOBAO".equals(platform.platformCode()))
+                .noneMatch(OnboardingFinalPreview.OperatingPlatformSummary::complete));
+            org.junit.jupiter.api.Assertions.assertTrue(incompletePlatform.operatingPlatforms()
+                .stream()
+                .filter(platform -> "DOUYIN".equals(platform.platformCode()))
+                .allMatch(OnboardingFinalPreview.OperatingPlatformSummary::complete));
+            org.junit.jupiter.api.Assertions.assertNotNull(license);
+        });
+    }
+
+    private OnboardingFinalPreview assertPreviewBlocker(Long tenantId,
+                                                        Long actorUserId,
+                                                        Long merchantId,
+                                                        Long applicationId,
+                                                        String blockerCode) {
+        OnboardingFinalPreview preview = onboardingFinalPreviewService
+            .preview(tenantId, actorUserId, merchantId, applicationId);
+        org.junit.jupiter.api.Assertions.assertFalse(preview.readyForSubmission());
+        org.junit.jupiter.api.Assertions.assertTrue(preview.blockers()
+            .stream()
+            .anyMatch(blocker -> blockerCode.equals(blocker
+                .code())), () -> "Missing blocker " + blockerCode + ": " + preview.blockers());
+        return preview;
     }
 
     private KycProfileSaveCommand validProfileCommand(Long tenantId,

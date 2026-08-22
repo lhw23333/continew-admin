@@ -77,7 +77,7 @@
 - [x] 7.6 Implement ordinary/accelerated settlement-account modes with encrypted account data and pluggable verification port
 - [x] 7.7 Implement pricing-version selection and parent-bound revalidation at save and final submission
 - [x] 7.8 Implement multiple operating-platform records and independently versioned proof attachments
-- [ ] 7.9 Implement final preview using the exact saved business/KYC/pricing versions and sanitized account/identity summaries
+- [x] 7.9 Implement final preview using the exact saved business/KYC/pricing versions and sanitized account/identity summaries
 - [ ] 7.10 Implement idempotent final submission, frozen submitted KYC version, workflow outbox event, and duplicate-click tests
 - [ ] 7.11 Implement supplementation as a new linked KYC version with field/attachment diff and no direct mutation of submitted versions
 - [ ] 7.12 Implement Vue five-step wizard, local unsaved state, explicit save indicator, reload recovery, preview, conflict resolution, and safe attachment viewer

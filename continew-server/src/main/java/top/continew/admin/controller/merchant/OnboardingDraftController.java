@@ -51,6 +51,8 @@ import top.continew.admin.merchant.onboarding.application.KycProfileService;
 import top.continew.admin.merchant.onboarding.application.KycProfileView;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
+import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreview;
+import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreviewService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
@@ -79,10 +81,20 @@ public class OnboardingDraftController {
     private final OnboardingDraftService onboardingDraftService;
     private final KycReuseService kycReuseService;
     private final OnboardingEvidenceService onboardingEvidenceService;
+    private final OnboardingFinalPreviewService onboardingFinalPreviewService;
     private final KycProfileService kycProfileService;
     private final SettlementAccountService settlementAccountService;
     private final OnboardingPricingService onboardingPricingService;
     private final OperatingPlatformService operatingPlatformService;
+
+    @Log(ignore = true)
+    @Operation(summary = "获取最终确认预览", description = "只读返回精确保存版本的脱敏摘要和提交阻塞原因")
+    @SaCheckPermission("merchant:onboarding:create")
+    @GetMapping("/{applicationId}/final-preview")
+    public OnboardingFinalPreview finalPreview(@PathVariable Long merchantId, @PathVariable Long applicationId) {
+        return onboardingFinalPreviewService.preview(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId);
+    }
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")

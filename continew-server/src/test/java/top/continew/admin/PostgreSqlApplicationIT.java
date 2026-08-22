@@ -169,6 +169,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyOperatingPlatforms();
     }
 
+    @Test
+    void onboardingFinalPreviewUsesExactMaskedVersionsWithoutSideEffects() {
+        verifyOnboardingFinalPreview();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()
