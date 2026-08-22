@@ -42,5 +42,5 @@ public interface WorkflowService {
 
     WorkflowPage<WorkflowTask> pageDone(WorkflowDoneQuery query);
 
-    WorkflowProcessHistory history(Long tenantId, String processInstanceId);
+    WorkflowProcessHistory history(Long tenantId, Long userId, String processInstanceId);
 }

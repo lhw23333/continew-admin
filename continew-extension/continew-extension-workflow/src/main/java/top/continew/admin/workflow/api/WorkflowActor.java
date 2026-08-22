@@ -14,9 +14,18 @@
  * limitations under the License.
  */
 
-package top.continew.admin.workflow.query;
+package top.continew.admin.workflow.api;
 
-/** Tenant-scoped todo/claimed query; candidate role codes are always resolved server-side. */
-public record WorkflowTaskQuery(Long tenantId, Long userId, String processDefinitionKey, String businessKey,
-                                String taskName, boolean claimedOnly, int page, int size) {
+import java.util.Set;
+
+/** Enabled ContiNew user and server-resolved role codes used for Flowable assignment. */
+public record WorkflowActor(Long tenantId, Long userId, Set<String> roleCodes) {
+
+    public WorkflowActor {
+        roleCodes = Set.copyOf(roleCodes);
+    }
+
+    public String flowableUserId() {
+        return String.valueOf(userId);
+    }
 }

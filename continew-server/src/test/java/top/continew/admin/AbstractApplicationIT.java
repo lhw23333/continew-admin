@@ -344,8 +344,47 @@ abstract class AbstractApplicationIT {
     protected void verifyWorkflowAdapterCommandsAndQueries() throws Exception {
         long tenantId = 931L;
         long reviewerUserId = 93111L;
+        long siblingUserId = 93112L;
+        long operatorUserId = 93113L;
+        long rootAgentId = 931001L;
+        long merchantAgentId = 931002L;
+        long siblingAgentId = 931003L;
+        long merchantId = 931101L;
+        long applicationId = 93101L;
+        long roleId = 931201L;
         String processKey = "workflow-adapter-test-v1";
-        String businessKey = "931:WORKFLOW_ADAPTER:93101:1";
+        String businessKey = "931:MERCHANT_ONBOARDING:93101:1";
+        LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 22, 9, 0);
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, 93120L, "WORKFLOW-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, 93121L, "WORKFLOW-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingUserId, "WORKFLOW-SIBLING"));
+            merchantMasterService
+                .register(93120L, merchantRegistration(merchantId, tenantId, merchantAgentId, operatorUserId, reviewerUserId, "WORKFLOW-MERCHANT", "e"
+                    .repeat(64)));
+            insertQueryUser(tenantId, reviewerUserId, "workflow-reviewer");
+            insertQueryUser(tenantId, siblingUserId, "workflow-sibling");
+            insertQueryUser(tenantId, operatorUserId, "workflow-operator");
+            jdbcTemplate.update("""
+                INSERT INTO sys_role
+                (id, name, code, data_scope, description, sort, is_system, menu_check_strictly,
+                 dept_check_strictly, create_user, create_time, deleted, tenant_id)
+                VALUES (?, 'Workflow Reviewer', 'ROLE_REVIEW', 4, NULL, 1, ?, ?, ?, 1, ?, 0, ?)
+                """, roleId, false, true, true, fixtureTime, tenantId);
+            jdbcTemplate
+                .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 931301L, reviewerUserId, roleId, tenantId);
+            jdbcTemplate
+                .update("INSERT INTO sys_user_role (id, user_id, role_id, tenant_id) VALUES (?, ?, ?, ?)", 931302L, siblingUserId, roleId, tenantId);
+            jdbcTemplate.update("""
+                INSERT INTO biz_onboarding_application
+                (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, product_code,
+                 requirement_version, channel_config_version, status, row_version, create_time, deleted)
+                VALUES (?, ?, 'APP-WORKFLOW-931', ?, ?, 'SYNTHETIC', 'REVIEW', 'REQ-WF-1', 'CFG-WF-1',
+                        'SUBMITTED', 0, ?, 0)
+                """, applicationId, tenantId, merchantId, merchantAgentId, fixtureTime);
+        });
         String resourceName = "workflow-adapter-test-931.bpmn20.xml";
         String bpmn = """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -370,7 +409,7 @@ abstract class AbstractApplicationIT {
             .deploy();
         try {
             Map<String, Object> variables = Map
-                .of("tenantId", tenantId, "merchantId", 93101L, "applicationId", 93102L, "kycVersion", 1L, "channelCode", "SYNTHETIC", "applicantId", 93103L, "owningAgentId", 93104L, "riskLevel", "LOW", "requiresSupplement", Boolean.FALSE);
+                .of("tenantId", tenantId, "merchantId", merchantId, "applicationId", applicationId, "kycVersion", 1L, "channelCode", "SYNTHETIC", "applicantId", reviewerUserId, "owningAgentId", merchantAgentId, "riskLevel", "LOW", "requiresSupplement", Boolean.FALSE);
             StartWorkflowCommand startCommand = new StartWorkflowCommand(tenantId, processKey, businessKey, variables);
             ExecutorService executor = Executors.newFixedThreadPool(2);
             CountDownLatch ready = new CountDownLatch(2);
@@ -414,27 +453,40 @@ abstract class AbstractApplicationIT {
                 .count());
 
             WorkflowPage<WorkflowTask> todo = workflowService
-                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, Set
-                    .of("ROLE_REVIEW"), processKey, businessKey, "Review", false, 1, 20));
+                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, businessKey, "Review", false, 1, 20));
             org.junit.jupiter.api.Assertions.assertEquals(1, todo.total());
             WorkflowTask task = todo.items().get(0);
             org.junit.jupiter.api.Assertions.assertEquals(WorkflowTask.State.TODO, task.state());
             org.junit.jupiter.api.Assertions.assertEquals("reviewTask", task.taskDefinitionKey());
             org.junit.jupiter.api.Assertions.assertTrue(workflowService
-                .pageTodo(new WorkflowTaskQuery(tenantId + 1, reviewerUserId, Set
-                    .of("ROLE_REVIEW"), processKey, businessKey, null, false, 1, 20)).items().isEmpty());
+                .pageTodo(new WorkflowTaskQuery(tenantId, siblingUserId, processKey, businessKey, null, false, 1, 20))
+                .items()
+                .isEmpty());
+            org.junit.jupiter.api.Assertions.assertTrue(workflowService
+                .pageTodo(new WorkflowTaskQuery(tenantId, operatorUserId, processKey, businessKey, null, false, 1, 20))
+                .items()
+                .isEmpty());
+            WorkflowOperationException wrongTenant = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId + 1, reviewerUserId, processKey, businessKey, null, false, 1, 20)));
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowOperationException.Code.NOT_FOUND, wrongTenant
+                .code());
+            WorkflowOperationException siblingClaim = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowService
+                    .claim(new ClaimTaskCommand(tenantId, task.taskId(), siblingUserId)));
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowOperationException.Code.NOT_FOUND, siblingClaim
+                .code());
 
             workflowService.claim(new ClaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
             WorkflowPage<WorkflowTask> claimed = workflowService
-                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, Set
-                    .of("ROLE_REVIEW"), processKey, businessKey, null, true, 1, 20));
+                .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, businessKey, null, true, 1, 20));
             org.junit.jupiter.api.Assertions.assertEquals(1, claimed.total());
             org.junit.jupiter.api.Assertions.assertEquals(String.valueOf(reviewerUserId), claimed.items()
                 .get(0)
                 .assignee());
             WorkflowOperationException wrongUnclaim = org.junit.jupiter.api.Assertions
                 .assertThrows(WorkflowOperationException.class, () -> workflowService
-                    .unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), reviewerUserId + 1)));
+                    .unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), operatorUserId)));
             org.junit.jupiter.api.Assertions.assertEquals(WorkflowOperationException.Code.NOT_ASSIGNED, wrongUnclaim
                 .code());
             workflowService.unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
@@ -446,7 +498,8 @@ abstract class AbstractApplicationIT {
                 .pageDone(new WorkflowDoneQuery(tenantId, reviewerUserId, processKey, businessKey, "Review", 1, 20));
             org.junit.jupiter.api.Assertions.assertEquals(1, done.total());
             org.junit.jupiter.api.Assertions.assertEquals(WorkflowTask.State.DONE, done.items().get(0).state());
-            WorkflowProcessHistory history = workflowService.history(tenantId, started.processInstanceId());
+            WorkflowProcessHistory history = workflowService.history(tenantId, reviewerUserId, started
+                .processInstanceId());
             org.junit.jupiter.api.Assertions.assertTrue(history.ended());
             org.junit.jupiter.api.Assertions.assertEquals(processKey, history.processDefinitionKey());
             org.junit.jupiter.api.Assertions.assertTrue(history.activities()
@@ -470,6 +523,16 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertTrue(Set
                 .of("tenantId", "merchantId", "applicationId", "kycVersion", "channelCode", "applicantId", "owningAgentId", "riskLevel", "requiresSupplement")
                 .containsAll(historicVariableNames));
+
+            jdbcTemplate
+                .update("UPDATE sys_user SET status = 2 WHERE tenant_id = ? AND id = ?", tenantId, reviewerUserId);
+            WorkflowOperationException disabledUser = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowService
+                    .history(tenantId, reviewerUserId, started.processInstanceId()));
+            org.junit.jupiter.api.Assertions.assertEquals(WorkflowOperationException.Code.NOT_FOUND, disabledUser
+                .code());
+            jdbcTemplate
+                .update("UPDATE sys_user SET status = 1 WHERE tenant_id = ? AND id = ?", tenantId, reviewerUserId);
 
             long historicCount = processEngine.getHistoryService()
                 .createHistoricProcessInstanceQuery()

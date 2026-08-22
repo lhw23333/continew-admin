@@ -14,9 +14,18 @@
  * limitations under the License.
  */
 
-package top.continew.admin.workflow.query;
+package top.continew.admin.workflow.api;
 
-/** Tenant-scoped todo/claimed query; candidate role codes are always resolved server-side. */
-public record WorkflowTaskQuery(Long tenantId, Long userId, String processDefinitionKey, String businessKey,
-                                String taskName, boolean claimedOnly, int page, int size) {
+/** Resolves ContiNew identity/roles and checks project business-object scope for every workflow operation. */
+public interface WorkflowAuthorizationPort {
+
+    WorkflowActor requireActor(Long tenantId, Long userId);
+
+    boolean canAccessBusiness(WorkflowActor actor, String businessType, Long businessId);
+
+    default void requireBusinessAccess(WorkflowActor actor, String businessType, Long businessId) {
+        if (!canAccessBusiness(actor, businessType, businessId)) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
+        }
+    }
 }

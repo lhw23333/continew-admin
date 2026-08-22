@@ -31,6 +31,9 @@ import org.flowable.task.api.history.HistoricTaskInstance;
 import org.flowable.task.api.history.HistoricTaskInstanceQuery;
 import org.springframework.stereotype.Service;
 import top.continew.admin.workflow.api.WorkflowOperationException;
+import top.continew.admin.workflow.api.WorkflowActor;
+import top.continew.admin.workflow.api.WorkflowAuthorizationPort;
+import top.continew.admin.workflow.api.WorkflowMappingService;
 import top.continew.admin.workflow.api.WorkflowService;
 import top.continew.admin.workflow.api.WorkflowVariablePolicy;
 import top.continew.admin.workflow.command.ClaimTaskCommand;
@@ -38,6 +41,7 @@ import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
 import top.continew.admin.workflow.dto.WorkflowActivityHistory;
+import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
 import top.continew.admin.workflow.dto.WorkflowPage;
 import top.continew.admin.workflow.dto.WorkflowProcessHistory;
 import top.continew.admin.workflow.dto.WorkflowRef;
@@ -74,19 +78,25 @@ public class FlowableWorkflowService implements WorkflowService {
     private final ManagementService managementService;
     private final WorkflowVariablePolicy variablePolicy;
     private final FlowableWorkflowStartTransaction startTransaction;
+    private final WorkflowAuthorizationPort authorizationPort;
+    private final WorkflowMappingService mappingService;
 
     public FlowableWorkflowService(TaskService taskService,
                                    HistoryService historyService,
                                    RepositoryService repositoryService,
                                    ManagementService managementService,
                                    WorkflowVariablePolicy variablePolicy,
-                                   FlowableWorkflowStartTransaction startTransaction) {
+                                   FlowableWorkflowStartTransaction startTransaction,
+                                   WorkflowAuthorizationPort authorizationPort,
+                                   WorkflowMappingService mappingService) {
         this.taskService = taskService;
         this.historyService = historyService;
         this.repositoryService = repositoryService;
         this.managementService = managementService;
         this.variablePolicy = variablePolicy;
         this.startTransaction = startTransaction;
+        this.authorizationPort = authorizationPort;
+        this.mappingService = mappingService;
     }
 
     @Override
@@ -98,6 +108,12 @@ public class FlowableWorkflowService implements WorkflowService {
         if (variables.containsKey("tenantId") && !tenantId.equals(variables.get("tenantId"))) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.INVALID_REQUEST);
         }
+        Object applicantValue = variables.get("applicantId");
+        if (!(applicantValue instanceof Long applicantId)) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.INVALID_REQUEST);
+        }
+        WorkflowActor actor = authorizationPort.requireActor(tenantId, applicantId);
+        authorizationPort.requireBusinessAccess(actor, businessKey.businessType(), businessKey.businessId());
         LockManager lockManager = managementService.getLockManager(lockName(businessKey));
         try {
             return lockManager.waitForLockRunAndRelease(Duration.ofSeconds(30), () -> startTransaction
@@ -111,13 +127,18 @@ public class FlowableWorkflowService implements WorkflowService {
 
     @Override
     public void claim(ClaimTaskCommand command) {
-        String userId = user(command.tenantId(), command.userId());
+        WorkflowActor actor = authorizationPort.requireActor(command.tenantId(), command.userId());
+        String userId = actor.flowableUserId();
         Task task = requireTask(command.tenantId(), command.taskId());
+        requireTaskAccess(actor, task);
         if (task.getAssignee() != null) {
             if (userId.equals(task.getAssignee())) {
                 return;
             }
             throw new WorkflowOperationException(WorkflowOperationException.Code.ALREADY_CLAIMED);
+        }
+        if (!isCandidate(actor, task)) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
         }
         try {
             taskService.claim(task.getId(), userId);
@@ -128,8 +149,10 @@ public class FlowableWorkflowService implements WorkflowService {
 
     @Override
     public void unclaim(UnclaimTaskCommand command) {
-        String userId = user(command.tenantId(), command.userId());
+        WorkflowActor actor = authorizationPort.requireActor(command.tenantId(), command.userId());
+        String userId = actor.flowableUserId();
         Task task = requireTask(command.tenantId(), command.taskId());
+        requireTaskAccess(actor, task);
         if (task.getAssignee() == null) {
             return;
         }
@@ -145,8 +168,10 @@ public class FlowableWorkflowService implements WorkflowService {
 
     @Override
     public void complete(CompleteTaskCommand command) {
-        String userId = user(command.tenantId(), command.userId());
+        WorkflowActor actor = authorizationPort.requireActor(command.tenantId(), command.userId());
+        String userId = actor.flowableUserId();
         Task task = requireTask(command.tenantId(), command.taskId());
+        requireTaskAccess(actor, task);
         if (!userId.equals(task.getAssignee())) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_ASSIGNED);
         }
@@ -160,8 +185,9 @@ public class FlowableWorkflowService implements WorkflowService {
 
     @Override
     public WorkflowPage<WorkflowTask> pageTodo(WorkflowTaskQuery request) {
-        QueryContext context = queryContext(request.tenantId(), request.userId(), request.page(), request.size());
-        Set<String> groups = groups(request.candidateGroupCodes());
+        WorkflowActor actor = authorizationPort.requireActor(request.tenantId(), request.userId());
+        QueryContext context = queryContext(actor, request.page(), request.size());
+        Set<String> groups = groups(actor.roleCodes());
         TaskQuery query = taskService.createTaskQuery().taskTenantId(context.tenantId()).active();
         if (request.claimedOnly()) {
             query.taskAssignee(context.userId());
@@ -173,29 +199,37 @@ public class FlowableWorkflowService implements WorkflowService {
             query.endOr();
         }
         apply(query, request.processDefinitionKey(), request.businessKey(), request.taskName());
-        long total = query.count();
-        List<Task> tasks = query.orderByTaskCreateTime().desc().listPage(context.offset(), context.size());
-        return new WorkflowPage<>(taskViews(tasks), total, context.page(), context.size());
+        List<WorkflowTask> authorized = taskViews(query.orderByTaskCreateTime()
+            .desc()
+            .list()
+            .stream()
+            .filter(task -> canAccessTask(actor, task.getProcessInstanceId()))
+            .toList());
+        return page(authorized, context);
     }
 
     @Override
     public WorkflowPage<WorkflowTask> pageDone(WorkflowDoneQuery request) {
-        QueryContext context = queryContext(request.tenantId(), request.userId(), request.page(), request.size());
+        WorkflowActor actor = authorizationPort.requireActor(request.tenantId(), request.userId());
+        QueryContext context = queryContext(actor, request.page(), request.size());
         HistoricTaskInstanceQuery query = historyService.createHistoricTaskInstanceQuery()
             .taskTenantId(context.tenantId())
             .finished()
             .taskCompletedBy(context.userId());
         apply(query, request.processDefinitionKey(), request.businessKey(), request.taskName());
-        long total = query.count();
-        List<HistoricTaskInstance> tasks = query.orderByHistoricTaskInstanceEndTime()
+        List<WorkflowTask> authorized = historicTaskViews(query.orderByHistoricTaskInstanceEndTime()
             .desc()
-            .listPage(context.offset(), context.size());
-        return new WorkflowPage<>(historicTaskViews(tasks), total, context.page(), context.size());
+            .list()
+            .stream()
+            .filter(task -> canAccessTask(actor, task.getProcessInstanceId()))
+            .toList());
+        return page(authorized, context);
     }
 
     @Override
-    public WorkflowProcessHistory history(Long tenantId, String processInstanceId) {
-        String tenant = tenant(positive(tenantId));
+    public WorkflowProcessHistory history(Long tenantId, Long userId, String processInstanceId) {
+        WorkflowActor actor = authorizationPort.requireActor(tenantId, userId);
+        String tenant = tenant(actor.tenantId());
         String instanceId = required(processInstanceId, ENGINE_ID);
         HistoricProcessInstance process = historyService.createHistoricProcessInstanceQuery()
             .processInstanceId(instanceId)
@@ -203,6 +237,7 @@ public class FlowableWorkflowService implements WorkflowService {
         if (process == null || !tenant.equals(process.getTenantId())) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
         }
+        requireProcessAccess(actor, instanceId);
         ProcessDefinition definition = requireDefinition(process.getProcessDefinitionId());
         List<WorkflowActivityHistory> activities = historyService.createHistoricActivityInstanceQuery()
             .processInstanceId(instanceId)
@@ -230,6 +265,31 @@ public class FlowableWorkflowService implements WorkflowService {
             throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
         }
         return task;
+    }
+
+    private void requireTaskAccess(WorkflowActor actor, Task task) {
+        requireProcessAccess(actor, task.getProcessInstanceId());
+    }
+
+    private void requireProcessAccess(WorkflowActor actor, String processInstanceId) {
+        WorkflowInstanceMapping mapping = mappingService.findByProcessInstanceId(actor.tenantId(), processInstanceId)
+            .orElseThrow(() -> new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND));
+        authorizationPort.requireBusinessAccess(actor, mapping.businessType(), mapping.businessId());
+    }
+
+    private boolean canAccessTask(WorkflowActor actor, String processInstanceId) {
+        WorkflowInstanceMapping mapping = mappingService.findByProcessInstanceId(actor.tenantId(), processInstanceId)
+            .orElse(null);
+        return mapping != null && authorizationPort.canAccessBusiness(actor, mapping.businessType(), mapping
+            .businessId());
+    }
+
+    private boolean isCandidate(WorkflowActor actor, Task task) {
+        return taskService.getIdentityLinksForTask(task.getId())
+            .stream()
+            .anyMatch(link -> actor.flowableUserId().equals(link.getUserId()) || link.getGroupId() != null && actor
+                .roleCodes()
+                .contains(link.getGroupId()));
     }
 
     private List<WorkflowTask> taskViews(List<Task> tasks) {
@@ -320,12 +380,18 @@ public class FlowableWorkflowService implements WorkflowService {
         }
     }
 
-    private QueryContext queryContext(Long tenantId, Long userId, int page, int size) {
+    private QueryContext queryContext(WorkflowActor actor, int page, int size) {
         if (page < 1 || size < 1 || size > 100) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.INVALID_REQUEST);
         }
-        return new QueryContext(tenant(positive(tenantId)), String
-            .valueOf(positive(userId)), page, size, (page - 1) * size);
+        return new QueryContext(tenant(actor.tenantId()), actor.flowableUserId(), page, size, (page - 1) * size);
+    }
+
+    private WorkflowPage<WorkflowTask> page(List<WorkflowTask> authorized, QueryContext context) {
+        int fromIndex = Math.min(context.offset(), authorized.size());
+        int toIndex = Math.min(fromIndex + context.size(), authorized.size());
+        return new WorkflowPage<>(authorized.subList(fromIndex, toIndex), authorized.size(), context.page(), context
+            .size());
     }
 
     private Set<String> groups(Set<String> values) {
@@ -335,11 +401,6 @@ public class FlowableWorkflowService implements WorkflowService {
         return values.stream()
             .map(value -> required(value, GROUP_CODE))
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
-
-    private String user(Long tenantId, Long userId) {
-        positive(tenantId);
-        return String.valueOf(positive(userId));
     }
 
     private Long positive(Long value) {
