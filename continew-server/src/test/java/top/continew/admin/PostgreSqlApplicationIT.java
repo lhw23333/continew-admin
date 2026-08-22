@@ -174,6 +174,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingFinalPreview();
     }
 
+    @Test
+    void onboardingFinalSubmissionIsFrozenAndIdempotent() throws Exception {
+        verifyIdempotentOnboardingSubmission();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

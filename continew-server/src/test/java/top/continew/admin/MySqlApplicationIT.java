@@ -168,6 +168,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingFinalPreview();
     }
 
+    @Test
+    void onboardingFinalSubmissionIsFrozenAndIdempotent() throws Exception {
+        verifyIdempotentOnboardingSubmission();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

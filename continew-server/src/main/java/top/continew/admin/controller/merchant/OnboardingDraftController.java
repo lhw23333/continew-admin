@@ -55,6 +55,9 @@ import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreview
 import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreviewService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionCommand;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionResult;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionService;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
@@ -86,6 +89,7 @@ public class OnboardingDraftController {
     private final SettlementAccountService settlementAccountService;
     private final OnboardingPricingService onboardingPricingService;
     private final OperatingPlatformService operatingPlatformService;
+    private final OnboardingSubmissionService onboardingSubmissionService;
 
     @Log(ignore = true)
     @Operation(summary = "获取最终确认预览", description = "只读返回精确保存版本的脱敏摘要和提交阻塞原因")
@@ -94,6 +98,20 @@ public class OnboardingDraftController {
     public OnboardingFinalPreview finalPreview(@PathVariable Long merchantId, @PathVariable Long applicationId) {
         return onboardingFinalPreviewService.preview(UserContextHolder.getTenantId(), UserContextHolder
             .getUserId(), merchantId, applicationId);
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "确认并提交进件", description = "幂等冻结精确KYC版本并创建工作流启动Outbox事件")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PostMapping("/{applicationId}/submit")
+    public OnboardingSubmissionResult submit(@PathVariable Long merchantId,
+                                             @PathVariable Long applicationId,
+                                             @RequestBody @Valid SubmissionReq req,
+                                             HttpServletRequest request) {
+        return onboardingSubmissionService.submit(new OnboardingSubmissionCommand(UserContextHolder
+            .getTenantId(), UserContextHolder
+                .getUserId(), merchantId, applicationId, req.expectedVersion, req.idempotencyKey, req.traceId, JakartaServletUtil
+                    .getClientIP(request)));
     }
 
     @Log(ignore = true)
@@ -289,6 +307,19 @@ public class OnboardingDraftController {
         @NotNull
         @PositiveOrZero
         private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class SubmissionReq {
+        @NotNull
+        @PositiveOrZero
+        private Long expectedVersion;
+        @NotBlank
+        @Size(min = 8, max = 128)
+        private String idempotencyKey;
+        @Size(max = 64)
+        private String traceId;
     }
 
     @Getter

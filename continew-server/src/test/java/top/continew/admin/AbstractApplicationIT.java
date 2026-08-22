@@ -93,6 +93,10 @@ import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreview
 import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreviewService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionBlockedException;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionCommand;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionResult;
+import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionService;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
@@ -238,6 +242,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OperatingPlatformService operatingPlatformService;
+
+    @Autowired
+    private OnboardingSubmissionService onboardingSubmissionService;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -2241,6 +2248,180 @@ abstract class AbstractApplicationIT {
                 .allMatch(OnboardingFinalPreview.OperatingPlatformSummary::complete));
             org.junit.jupiter.api.Assertions.assertNotNull(license);
         });
+    }
+
+    protected void verifyIdempotentOnboardingSubmission() throws Exception {
+        long tenantId = 930L;
+        long rootAgentId = 93001L;
+        long merchantAgentId = 93002L;
+        long rootUserId = 93011L;
+        long merchantAgentUserId = 93012L;
+        long merchantId = 930101L;
+        long incompleteMerchantId = 930102L;
+        OnboardingSubmissionCommand[] commandRef = new OnboardingSubmissionCommand[1];
+        OnboardingDraftView[] draftRef = new OnboardingDraftView[1];
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "SUBMIT-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "SUBMIT-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 930201L, 930202L, "SUBMIT-MERCHANT", "c"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(incompleteMerchantId, tenantId, merchantAgentId, 930203L, 930204L, "SUBMIT-INCOMPLETE", "d"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 21, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 930501L, 1, "CHANNEL-U", "PRODUCT-U", "0.02000000", "2.00", "0.50000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 930601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-U","productCode":"PRODUCT-U","pricingVersionId":930501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(930701L, tenantId, "CHANNEL-U", "PRODUCT-U", "CFG-U-1", "REQ-U-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-U", "PRODUCT-U", "127.0.0.1");
+            kycProfileService.save(validProfileCommand(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), 0L));
+            org.mockito.Mockito.when(settlementAccountVerificationPort.verify(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.VERIFIED, "VERIFY-930-1", "SYNTHETIC-V1"));
+            settlementAccountService
+                .save(new SettlementAccountSaveCommand(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                    .applicationId(), SettlementAccountVerificationPort.SettlementMode.ORDINARY, "Profile Legal Subject", "BANK-930", "Submission Branch", "6222020200000930", 1L, "127.0.0.1"));
+            kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "BUSINESS_LICENSE", "private|submit/license", "license.png", "png", "image/png", "image/png", 10L, "5"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, baseTime));
+            kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "LEGAL_REPRESENTATIVE_ID_FRONT", "private|submit/legal-front", "legal-front.png", "png", "image/png", "image/png", 10L, "6"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 2, baseTime));
+            KycAttachment platformProof = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "SUPPLEMENT", "private|submit/platform", "platform.png", "png", "image/png", "image/png", 10L, "7"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 3, baseTime));
+            OperatingPlatform platform = operatingPlatformService
+                .create(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                    .applicationId(), "TAOBAO", "Submission Store", "https://submit.example.com", "SUBMIT-STORE", OperatingPlatform.CertificationStatus.CERTIFIED, "127.0.0.1");
+            operatingPlatformService.linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), platform.id(), platformProof.id(), "SUPPLEMENT", "127.0.0.1");
+            onboardingDraftService.saveProgress(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), 5, List.of(1, 2, 3, 4, 5), 2L, "127.0.0.1");
+            draftRef[0] = draft;
+            commandRef[0] = new OnboardingSubmissionCommand(tenantId, merchantAgentUserId, merchantId, draft.draft()
+                .applicationId(), 3L, "submit-930-idempotency", "trace-930", "127.0.0.1");
+
+            OnboardingDraftView incompleteDraft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, incompleteMerchantId, "CHANNEL-U", "PRODUCT-U", "127.0.0.1");
+            org.junit.jupiter.api.Assertions
+                .assertThrows(OnboardingSubmissionBlockedException.class, () -> onboardingSubmissionService
+                    .submit(new OnboardingSubmissionCommand(tenantId, merchantAgentUserId, incompleteMerchantId, incompleteDraft
+                        .draft()
+                        .applicationId(), 0L, "submit-930-incomplete", "trace-930-incomplete", "127.0.0.1")));
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_outbox_event WHERE tenant_id = ?", Integer.class, tenantId));
+        });
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<OnboardingSubmissionResult> concurrent;
+        try {
+            List<Future<OnboardingSubmissionResult>> futures = List.of(executor
+                .submit(() -> submitConcurrentOnboarding(ready, start, commandRef[0])), executor
+                    .submit(() -> submitConcurrentOnboarding(ready, start, commandRef[0])));
+            org.junit.jupiter.api.Assertions.assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            concurrent = futures.stream().map(future -> {
+                try {
+                    return future.get(30, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    throw new AssertionError(ex);
+                }
+            }).toList();
+        } finally {
+            executor.shutdownNow();
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).applicationId(), concurrent.get(1)
+            .applicationId());
+        org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).workflowRequest().eventId(), concurrent.get(1)
+            .workflowRequest()
+            .eventId());
+        org.junit.jupiter.api.Assertions.assertEquals(4L, concurrent.get(0).businessVersion());
+
+        TenantUtils.execute(tenantId, () -> {
+            OnboardingSubmissionResult repeated = onboardingSubmissionService.submit(commandRef[0]);
+            org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).workflowRequest().eventId(), repeated
+                .workflowRequest()
+                .eventId());
+            org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).submittedTime(), repeated.submittedTime());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantDomainException.class, () -> onboardingSubmissionService
+                    .submit(new OnboardingSubmissionCommand(tenantId, merchantAgentUserId, merchantId, draftRef[0]
+                        .draft()
+                        .applicationId(), 3L, "submit-930-different", "trace-930-other", "127.0.0.1")));
+            org.junit.jupiter.api.Assertions.assertEquals("SUBMITTED", jdbcTemplate
+                .queryForObject("SELECT status FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?", String.class, tenantId, draftRef[0]
+                    .draft()
+                    .applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals("submit-930-idempotency", jdbcTemplate
+                .queryForObject("SELECT idempotency_key FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?", String.class, tenantId, draftRef[0]
+                    .draft()
+                    .applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals("SUBMITTED", jdbcTemplate
+                .queryForObject("SELECT status FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", String.class, tenantId, draftRef[0]
+                    .draft()
+                    .kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertEquals(4L, jdbcTemplate
+                .queryForObject("SELECT row_version FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", Long.class, tenantId, draftRef[0]
+                    .draft()
+                    .kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertNotNull(jdbcTemplate
+                .queryForObject("SELECT frozen_time FROM biz_kyc_version WHERE tenant_id = ? AND id = ?", LocalDateTime.class, tenantId, draftRef[0]
+                    .draft()
+                    .kycVersionId()));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_outbox_event WHERE tenant_id = ? AND aggregate_id = ?", Integer.class, tenantId, draftRef[0]
+                    .draft()
+                    .applicationId()));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_security_audit WHERE tenant_id = ? AND action = 'ONBOARDING_SUBMIT' AND object_id = ?", Integer.class, tenantId, draftRef[0]
+                    .draft()
+                    .applicationId()));
+            String payload = jdbcTemplate
+                .queryForObject("SELECT payload_json FROM biz_outbox_event WHERE tenant_id = ? AND aggregate_id = ?", String.class, tenantId, draftRef[0]
+                    .draft()
+                    .applicationId());
+            org.junit.jupiter.api.Assertions.assertNotNull(payload);
+            org.junit.jupiter.api.Assertions.assertTrue(payload.contains("merchant-onboarding-review-v1"));
+            org.junit.jupiter.api.Assertions.assertTrue(payload.contains(String.valueOf(draftRef[0].draft()
+                .kycVersionId())));
+            org.junit.jupiter.api.Assertions.assertFalse(payload.contains("91350211M000100Y92"));
+            org.junit.jupiter.api.Assertions.assertFalse(payload.contains("6222020200000930"));
+            org.junit.jupiter.api.Assertions.assertFalse(payload.contains("13800000001"));
+            org.junit.jupiter.api.Assertions.assertFalse(payload.contains("private|submit"));
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ?", Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantAccessDeniedException.class, () -> kycProfileService
+                .save(validProfileCommand(tenantId, merchantAgentUserId, merchantId, draftRef[0].draft()
+                    .applicationId(), 4L)));
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingDraftService
+                    .saveProgress(tenantId, merchantAgentUserId, merchantId, draftRef[0].draft()
+                        .applicationId(), 5, List.of(1, 2, 3, 4, 5), 4L, "127.0.0.1"));
+        });
+    }
+
+    private OnboardingSubmissionResult submitConcurrentOnboarding(CountDownLatch ready,
+                                                                  CountDownLatch start,
+                                                                  OnboardingSubmissionCommand command) throws InterruptedException {
+        ready.countDown();
+        start.await();
+        OnboardingSubmissionResult[] result = new OnboardingSubmissionResult[1];
+        TenantUtils.execute(command.tenantId(), () -> result[0] = onboardingSubmissionService.submit(command));
+        return result[0];
     }
 
     private OnboardingFinalPreview assertPreviewBlocker(Long tenantId,

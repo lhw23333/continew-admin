@@ -18,33 +18,37 @@ package top.continew.admin.merchant.onboarding.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
-import top.continew.admin.common.base.model.entity.TenantBaseDO;
+import top.continew.starter.extension.crud.model.entity.BaseIdDO;
 
 import java.io.Serial;
 import java.time.LocalDateTime;
 
-/** Onboarding application persistence entity used by the draft boundary. */
+/** Transactional outbox row containing only sanitized routing identifiers. */
 @Data
-@TableName("biz_onboarding_application")
-public class OnboardingApplicationDO extends TenantBaseDO {
+@TableName("biz_outbox_event")
+public class OutboxEventDO extends BaseIdDO {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private String applicationNo;
-    private Long merchantId;
-    private Long owningAgentId;
-    private String channelCode;
-    private String productCode;
-    private String requirementVersion;
-    private String requirementSummaryJson;
-    private String channelConfigVersion;
-    private Long kycVersionId;
-    private String idempotencyKey;
+    private Long tenantId;
+    private String aggregateType;
+    private Long aggregateId;
+    private Long aggregateVersion;
+    private String eventType;
+    private String eventKey;
+    private String payloadJson;
+    private String headersJson;
     private String status;
-    private String activeDraftGuard;
-    private Long submittedBy;
-    private LocalDateTime submittedTime;
-    private LocalDateTime completedTime;
-    private Long rowVersion;
+    private Integer retryCount;
+    private LocalDateTime nextRetryTime;
+    private String lockedBy;
+    private LocalDateTime lockedTime;
+    private LocalDateTime occurredTime;
+    private LocalDateTime publishedTime;
+    private String lastErrorCategory;
+    private String lastErrorMessage;
+    private String traceId;
+    private LocalDateTime createTime;
+    private LocalDateTime updateTime;
 }
