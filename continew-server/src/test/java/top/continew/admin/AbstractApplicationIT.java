@@ -91,6 +91,8 @@ import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceServ
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
+import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
+import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
@@ -228,6 +230,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingPricingService onboardingPricingService;
+
+    @Autowired
+    private OperatingPlatformService operatingPlatformService;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -1922,6 +1927,110 @@ abstract class AbstractApplicationIT {
                 SELECT COUNT(*) FROM biz_security_audit
                 WHERE tenant_id = ? AND object_id = ? AND action = 'ONBOARDING_PRICING_SELECT'
                 """, Integer.class, tenantId, draft.draft().kycVersionId()));
+        });
+    }
+
+    protected void verifyOperatingPlatforms() {
+        long tenantId = 928L;
+        long rootAgentId = 92801L;
+        long merchantAgentId = 92802L;
+        long rootUserId = 92811L;
+        long merchantAgentUserId = 92812L;
+        long merchantId = 928101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "PLATFORM-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "PLATFORM-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 928201L, 928202L, "PLATFORM-MERCHANT", "6"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 20, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 928501L, 1, "CHANNEL-T", "PRODUCT-T", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 928601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-T","productCode":"PRODUCT-T","pricingVersionId":928501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            jdbcTemplate
+                .update("""
+                    INSERT INTO biz_channel_product_version
+                    (id, tenant_id, channel_code, product_code, config_version, requirement_version,
+                     supported_merchant_types_json, requirement_summary_json, status, effective_time,
+                     create_user, create_time, deleted)
+                    VALUES (?, ?, 'CHANNEL-T', 'PRODUCT-T', 'CFG-T-1', 'REQ-T-1', '["ENTERPRISE"]',
+                            '{"requiredEvidenceTypes":["BUSINESS_LICENSE"],"optionalEvidenceTypes":["STORE_QR","PLATFORM_CASH_FLOW","SUPPLEMENT"],"maxSupplementAttachments":5,"reuseExcludedFields":[]}',
+                            'ENABLED', ?, 1, ?, 0)
+                    """, 928701L, tenantId, baseTime, baseTime);
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-T", "PRODUCT-T", "127.0.0.1");
+
+            OperatingPlatform first = operatingPlatformService.create(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), "TAOBAO", "Store A", "https://store-a.example.com", "STORE-A", OperatingPlatform.CertificationStatus.UNVERIFIED, "127.0.0.1");
+            OperatingPlatform second = operatingPlatformService.create(tenantId, merchantAgentUserId, merchantId, draft
+                .draft()
+                .applicationId(), "DOUYIN", "Store B", "https://store-b.example.com", "STORE-B", OperatingPlatform.CertificationStatus.CERTIFIED, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertNotEquals(first.id(), second.id());
+            org.junit.jupiter.api.Assertions.assertEquals(2, operatingPlatformService
+                .list(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId())
+                .size());
+
+            OperatingPlatform updatedFirst = operatingPlatformService
+                .update(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), first
+                    .id(), "Store A Updated", "https://store-a.example.com/new", "STORE-A", OperatingPlatform.CertificationStatus.CERTIFIED, 0L, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(1L, updatedFirst.rowVersion());
+            OperatingPlatform unchangedSecond = operatingPlatformService
+                .list(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId())
+                .stream()
+                .filter(item -> item.id().equals(second.id()))
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals("Store B", unchangedSecond.storeName());
+            org.junit.jupiter.api.Assertions.assertEquals(0L, unchangedSecond.rowVersion());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(OnboardingDraftConflictException.class, () -> operatingPlatformService
+                    .update(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), first
+                        .id(), "Stale", null, "STORE-A", OperatingPlatform.CertificationStatus.UNVERIFIED, 0L, "127.0.0.1"));
+
+            KycAttachment firstProof = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "STORE_QR", "private|platform/store-a", "store-a.png", "png", "image/png", "image/png", 10L, "4"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 10, baseTime));
+            KycAttachment secondProof = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "PLATFORM_CASH_FLOW", "private|platform/store-b", "store-b.pdf", "pdf", "application/pdf", "application/pdf", 10L, "5"
+                    .repeat(64), KycAttachmentScanStatus.UNAVAILABLE, KycAttachmentValidationStatus.QUARANTINED, 11, baseTime));
+            OperatingPlatform firstWithProof = operatingPlatformService
+                .linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), first
+                    .id(), firstProof.id(), "STORE_QR", "127.0.0.1");
+            OperatingPlatform secondWithProof = operatingPlatformService
+                .linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), second
+                    .id(), secondProof.id(), "PLATFORM_CASH_FLOW", "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(firstProof.id()), firstWithProof.proofAttachments()
+                .stream()
+                .map(OperatingPlatform.ProofAttachment::attachmentId)
+                .toList());
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(secondProof.id()), secondWithProof.proofAttachments()
+                .stream()
+                .map(OperatingPlatform.ProofAttachment::attachmentId)
+                .toList());
+            org.junit.jupiter.api.Assertions.assertEquals("UNAVAILABLE", secondWithProof.proofAttachments()
+                .get(0)
+                .scanStatus());
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> operatingPlatformService
+                .linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), second
+                    .id(), firstProof.id(), "STORE_QR", "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> operatingPlatformService
+                .linkProof(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId(), first
+                    .id(), secondProof.id(), "STORE_QR", "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND action = 'OPERATING_PLATFORM_PROOF_LINK'
+                """, Integer.class, tenantId));
         });
     }
 

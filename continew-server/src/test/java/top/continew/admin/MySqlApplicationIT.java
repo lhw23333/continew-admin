@@ -158,6 +158,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingPricingSelection();
     }
 
+    @Test
+    void operatingPlatformsAndProofsAreIndependent() {
+        verifyOperatingPlatforms();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

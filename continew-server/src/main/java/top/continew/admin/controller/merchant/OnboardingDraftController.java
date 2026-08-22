@@ -53,6 +53,8 @@ import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceServ
 import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
+import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
+import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
@@ -80,6 +82,7 @@ public class OnboardingDraftController {
     private final KycProfileService kycProfileService;
     private final SettlementAccountService settlementAccountService;
     private final OnboardingPricingService onboardingPricingService;
+    private final OperatingPlatformService operatingPlatformService;
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")
@@ -197,6 +200,57 @@ public class OnboardingDraftController {
         return onboardingPricingService.select(UserContextHolder.getTenantId(), UserContextHolder
             .getUserId(), merchantId, applicationId, req.getPricingVersionId(), req
                 .getExpectedVersion(), JakartaServletUtil.getClientIP(request));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "查询经营平台记录")
+    @SaCheckPermission("merchant:onboarding:create")
+    @GetMapping("/{applicationId}/platforms")
+    public List<OperatingPlatform> listPlatforms(@PathVariable Long merchantId, @PathVariable Long applicationId) {
+        return operatingPlatformService.list(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId);
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "新增经营平台记录")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PostMapping("/{applicationId}/platforms")
+    public OperatingPlatform createPlatform(@PathVariable Long merchantId,
+                                            @PathVariable Long applicationId,
+                                            @RequestBody @Valid PlatformCreateReq req,
+                                            HttpServletRequest request) {
+        return operatingPlatformService.create(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, req.getPlatformCode(), req.getStoreName(), req.getStoreUrl(), req
+                .getStoreIdentifier(), req.getCertificationStatus(), JakartaServletUtil.getClientIP(request));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "修改经营平台记录", description = "平台编码不可通过普通修改操作变更")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PatchMapping("/{applicationId}/platforms/{platformId}")
+    public OperatingPlatform updatePlatform(@PathVariable Long merchantId,
+                                            @PathVariable Long applicationId,
+                                            @PathVariable Long platformId,
+                                            @RequestBody @Valid PlatformUpdateReq req,
+                                            HttpServletRequest request) {
+        return operatingPlatformService.update(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, platformId, req.getStoreName(), req.getStoreUrl(), req
+                .getStoreIdentifier(), req.getCertificationStatus(), req.getExpectedVersion(), JakartaServletUtil
+                    .getClientIP(request));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "关联经营平台证明附件", description = "附件必须属于同一KYC版本且证明类型匹配")
+    @SaCheckPermission("merchant:onboarding:create")
+    @PostMapping("/{applicationId}/platforms/{platformId}/proofs")
+    public OperatingPlatform linkPlatformProof(@PathVariable Long merchantId,
+                                               @PathVariable Long applicationId,
+                                               @PathVariable Long platformId,
+                                               @RequestBody @Valid PlatformProofReq req,
+                                               HttpServletRequest request) {
+        return operatingPlatformService.linkProof(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId, platformId, req.getAttachmentId(), req
+                .getEvidenceType(), JakartaServletUtil.getClientIP(request));
     }
 
     @Getter
@@ -349,5 +403,52 @@ public class OnboardingDraftController {
         @NotNull
         @PositiveOrZero
         private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class PlatformCreateReq {
+        @NotBlank
+        @Size(max = 64)
+        private String platformCode;
+        @NotBlank
+        @Size(max = 200)
+        private String storeName;
+        @Size(max = 1000)
+        private String storeUrl;
+        @NotBlank
+        @Size(max = 128)
+        private String storeIdentifier;
+        @NotNull
+        private OperatingPlatform.CertificationStatus certificationStatus;
+    }
+
+    @Getter
+    @Setter
+    public static class PlatformUpdateReq {
+        @NotBlank
+        @Size(max = 200)
+        private String storeName;
+        @Size(max = 1000)
+        private String storeUrl;
+        @NotBlank
+        @Size(max = 128)
+        private String storeIdentifier;
+        @NotNull
+        private OperatingPlatform.CertificationStatus certificationStatus;
+        @NotNull
+        @PositiveOrZero
+        private Long expectedVersion;
+    }
+
+    @Getter
+    @Setter
+    public static class PlatformProofReq {
+        @NotNull
+        @Positive
+        private Long attachmentId;
+        @NotBlank
+        @Size(max = 64)
+        private String evidenceType;
     }
 }

@@ -11,6 +11,8 @@ DELETE FROM sys_user_role WHERE role_id IN (SELECT id FROM sys_role WHERE code I
 DELETE FROM sys_role WHERE code IN ('MERCHANT_OPERATOR', 'MERCHANT_REVIEWER');
 ALTER TABLE sys_user DROP COLUMN must_change_password;
 DROP TABLE IF EXISTS biz_security_audit;
+DROP TABLE IF EXISTS biz_kyc_platform_attachment;
+DROP TABLE IF EXISTS biz_kyc_operating_platform;
 DROP TABLE IF EXISTS biz_channel_event;
 DROP TABLE IF EXISTS biz_channel_product_version;
 DROP TABLE IF EXISTS biz_outbox_event;

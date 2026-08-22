@@ -22,6 +22,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/settlement-account.sql
   - include:
+      file: db/changelog/postgresql/merchant/operating-platform.sql
+  - include:
       file: db/changelog/postgresql/merchant/merchant-query-projection.sql
   - include:
       file: db/changelog/postgresql/merchant/agent-identity.sql
