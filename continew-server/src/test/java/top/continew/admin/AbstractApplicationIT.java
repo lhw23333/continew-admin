@@ -84,8 +84,11 @@ import top.continew.admin.merchant.onboarding.application.KycReuseSourceView;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftConflictException;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
+import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
+import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
+import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentRepository;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentScanStatus;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentValidationStatus;
@@ -204,6 +207,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private KycReuseService kycReuseService;
+
+    @Autowired
+    private OnboardingEvidenceService onboardingEvidenceService;
 
     @SpyBean
     private OnlineUserService onlineUserService;
@@ -1515,6 +1521,117 @@ abstract class AbstractApplicationIT {
         });
     }
 
+    protected void verifyOnboardingEvidenceCollection() {
+        long tenantId = 924L;
+        long rootAgentId = 92401L;
+        long merchantAgentId = 92402L;
+        long siblingAgentId = 92403L;
+        long rootUserId = 92411L;
+        long merchantAgentUserId = 92412L;
+        long siblingUserId = 92413L;
+        long merchantId = 924101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "EVIDENCE-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "EVIDENCE-MERCHANT"));
+            agentHierarchyService
+                .register(registration(siblingAgentId, tenantId, rootAgentId, siblingUserId, "EVIDENCE-SIBLING"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 924201L, 924202L, "EVIDENCE-MERCHANT", "d"
+                    .repeat(64)));
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 12, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 924501L, 1, "CHANNEL-E", "PRODUCT-E", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 924601L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-E","productCode":"PRODUCT-E","pricingVersionId":924501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(924701L, tenantId, "CHANNEL-E", "PRODUCT-E", "CFG-E-1", "REQ-E-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime, "[]", 1);
+
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-E", "PRODUCT-E", "127.0.0.1");
+            OnboardingEvidenceSummary initial = onboardingEvidenceService
+                .summary(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertFalse(initial.complete());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-E-1", initial.requirementVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(2, initial.evidenceTypes()
+                .stream()
+                .filter(OnboardingEvidenceSummary.EvidenceTypeStatus::required)
+                .count());
+            org.junit.jupiter.api.Assertions.assertThrows(KycAttachmentException.class, () -> onboardingEvidenceService
+                .requireUploadAllowed(tenantId, merchantAgentUserId, draft.draft().kycVersionId(), "UNKNOWN_TYPE"));
+            var optionalRule = onboardingEvidenceService.requireUploadAllowed(tenantId, merchantAgentUserId, draft
+                .draft()
+                .kycVersionId(), "SUPPLEMENT");
+            org.junit.jupiter.api.Assertions.assertFalse(optionalRule.required());
+            org.junit.jupiter.api.Assertions.assertEquals(1, optionalRule.maxOptionalAttachments());
+
+            KycAttachment businessLicense = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft
+                .draft()
+                .kycVersionId(), "BUSINESS_LICENSE", "private|evidence/business-license", "business.png", "png", "image/png", "image/png", 10L, "1"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, baseTime));
+            KycAttachment legalRepresentative = kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft
+                .draft()
+                .kycVersionId(), "LEGAL_REPRESENTATIVE_ID_FRONT", "private|evidence/legal-front", "legal.png", "png", "image/png", "image/png", 10L, "2"
+                    .repeat(64), KycAttachmentScanStatus.UNAVAILABLE, KycAttachmentValidationStatus.QUARANTINED, 2, baseTime));
+            kycAttachmentRepository.insert(new KycAttachmentDraft(tenantId, draft.draft()
+                .kycVersionId(), "SUPPLEMENT", "private|evidence/supplement", "supplement.pdf", "pdf", "application/pdf", "application/pdf", 10L, "3"
+                    .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 3, baseTime));
+
+            OnboardingEvidenceSummary pending = onboardingEvidenceService
+                .summary(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertFalse(pending.complete());
+            var legalStatus = pending.evidenceTypes()
+                .stream()
+                .filter(item -> "LEGAL_REPRESENTATIVE_ID_FRONT".equals(item.evidenceType()))
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(1, legalStatus.pendingScanCount());
+            org.junit.jupiter.api.Assertions.assertEquals(1, legalStatus.invalidCount());
+            org.junit.jupiter.api.Assertions.assertEquals(3, pending.attachments().size());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantAccessDeniedException.class, () -> onboardingEvidenceService
+                    .summary(tenantId, siblingUserId, merchantId, draft.draft().applicationId()));
+
+            jdbcTemplate.update("""
+                UPDATE biz_kyc_attachment SET scan_status = 'CLEAN', validation_status = 'VALID' WHERE id = ?
+                """, legalRepresentative.id());
+            OnboardingEvidenceSummary complete = onboardingEvidenceService
+                .summary(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertTrue(complete.complete());
+            org.junit.jupiter.api.Assertions.assertEquals(businessLicense.id(), complete.attachments()
+                .get(0)
+                .attachmentId());
+
+            jdbcTemplate
+                .update("""
+                    INSERT INTO biz_channel_product_version
+                    (id, tenant_id, channel_code, product_code, config_version, requirement_version,
+                     supported_merchant_types_json, requirement_summary_json, status, effective_time,
+                     create_user, create_time, deleted)
+                    VALUES (?, ?, 'CHANNEL-E', 'PRODUCT-E', 'CFG-E-2', 'REQ-E-2', '["ENTERPRISE"]',
+                            '{"requiredEvidenceTypes":["NEW_EVIDENCE"],"optionalEvidenceTypes":[],"maxSupplementAttachments":0,"reuseExcludedFields":[]}',
+                            'ENABLED', ?, 1, ?, 0)
+                    """, 924702L, tenantId, baseTime
+                    .plusHours(1), baseTime.plusHours(1));
+            OnboardingEvidenceSummary preserved = onboardingEvidenceService
+                .summary(tenantId, merchantAgentUserId, merchantId, draft.draft().applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals("REQ-E-1", preserved.requirementVersion());
+            org.junit.jupiter.api.Assertions.assertTrue(preserved.evidenceTypes()
+                .stream()
+                .anyMatch(item -> "BUSINESS_LICENSE".equals(item.evidenceType())));
+            org.junit.jupiter.api.Assertions.assertFalse(preserved.evidenceTypes()
+                .stream()
+                .anyMatch(item -> "NEW_EVIDENCE".equals(item.evidenceType())));
+        });
+    }
+
     private void insertQueryUser(Long tenantId, Long userId, String username) {
         jdbcTemplate.update("""
             INSERT INTO sys_user
@@ -1545,11 +1662,25 @@ abstract class AbstractApplicationIT {
                                              String status,
                                              LocalDateTime effectiveTime,
                                              String reuseExcludedFieldsJson) {
+        insertChannelProductVersion(id, tenantId, channelCode, productCode, configVersion, requirementVersion, merchantTypesJson, status, effectiveTime, reuseExcludedFieldsJson, 5);
+    }
+
+    private void insertChannelProductVersion(Long id,
+                                             Long tenantId,
+                                             String channelCode,
+                                             String productCode,
+                                             String configVersion,
+                                             String requirementVersion,
+                                             String merchantTypesJson,
+                                             String status,
+                                             LocalDateTime effectiveTime,
+                                             String reuseExcludedFieldsJson,
+                                             int maxSupplementAttachments) {
         String requirementSummary = """
             {"requiredEvidenceTypes":["BUSINESS_LICENSE","LEGAL_REPRESENTATIVE_ID_FRONT"],
-             "optionalEvidenceTypes":["SUPPLEMENT"],"maxSupplementAttachments":5,
+             "optionalEvidenceTypes":["SUPPLEMENT"],"maxSupplementAttachments":%s,
              "reuseExcludedFields":%s}
-            """.formatted(reuseExcludedFieldsJson);
+            """.formatted(maxSupplementAttachments, reuseExcludedFieldsJson);
         jdbcTemplate
             .update("""
                 INSERT INTO biz_channel_product_version

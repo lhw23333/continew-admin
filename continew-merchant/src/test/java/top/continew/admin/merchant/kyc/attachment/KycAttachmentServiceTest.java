@@ -62,6 +62,7 @@ class KycAttachmentServiceTest {
     private MutableScanner scanner;
     private MutableInspector inspector;
     private KycAttachmentService service;
+    private boolean optionalEvidence;
 
     @BeforeEach
     void setUp() {
@@ -79,7 +80,13 @@ class KycAttachmentServiceTest {
         KycAttachmentPolicy policy = new KycAttachmentPolicy(16L, 2, 3, Duration.ofMinutes(5), Set
             .of("jpg", "jpeg", "png", "pdf"), Map
                 .of("jpg", "image/jpeg", "jpeg", "image/jpeg", "png", "image/png", "pdf", "application/pdf"));
-        service = new KycAttachmentService(ownershipRepository, attachmentRepository, merchantScope, agentRepository, inspector, scanner, storage, policy, new SecurityAuditWriter(auditRepository));
+        service = new KycAttachmentService(ownershipRepository, attachmentRepository, (tenantId,
+                                                                                       actorUserId,
+                                                                                       kycVersionId,
+                                                                                       evidenceType) -> new KycEvidenceRequirementPort.EvidenceRule("REQ-TEST", !optionalEvidence, optionalEvidence
+                                                                                           ? Set.of("BUSINESS_LICENSE")
+                                                                                           : Set
+                                                                                               .of(), 1), merchantScope, agentRepository, inspector, scanner, storage, policy, new SecurityAuditWriter(auditRepository));
     }
 
     @Test
@@ -139,6 +146,18 @@ class KycAttachmentServiceTest {
         withTenant(() -> assertThrows(KycAttachmentException.class, () -> service
             .upload(command("license.png", "image/png", new byte[] {1}))));
         assertEquals(0, storage.storeCount);
+    }
+
+    @Test
+    void enforcesChannelOptionalAttachmentLimit() {
+        optionalEvidence = true;
+        scanner.status = KycAttachmentScanStatus.CLEAN;
+        withTenant(() -> {
+            service.upload(command("first.png", "image/png", new byte[] {1, 2, 3}));
+            assertThrows(KycAttachmentException.class, () -> service
+                .upload(command("second.png", "image/png", new byte[] {4, 5, 6})));
+        });
+        assertEquals(1, storage.storeCount);
     }
 
     private KycAttachmentUploadCommand command(String name, String declaredMime, byte[] content) {
@@ -228,6 +247,14 @@ class KycAttachmentServiceTest {
         @Override
         public Optional<KycAttachment> findById(Long tenantId, Long attachmentId) {
             return Optional.ofNullable(attachments.get(attachmentId)).filter(item -> item.tenantId().equals(tenantId));
+        }
+
+        @Override
+        public List<KycAttachment> listByKycVersion(Long tenantId, Long kycVersionId) {
+            return attachments.values()
+                .stream()
+                .filter(item -> item.tenantId().equals(tenantId) && item.kycVersionId().equals(kycVersionId))
+                .toList();
         }
 
         @Override

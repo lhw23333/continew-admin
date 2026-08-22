@@ -27,6 +27,8 @@ public interface OnboardingDraftRepository {
 
     Optional<OnboardingDraft> findByApplicationId(Long tenantId, Long merchantId, Long applicationId);
 
+    Optional<OnboardingDraft> findByKycVersionId(Long tenantId, Long kycVersionId);
+
     int nextKycVersionNo(Long tenantId, Long merchantId);
 
     void insert(OnboardingDraftDraft draft);

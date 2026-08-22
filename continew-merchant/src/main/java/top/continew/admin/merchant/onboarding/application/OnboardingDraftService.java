@@ -80,9 +80,9 @@ public class OnboardingDraftService {
                 .replace("-", "")
                 .toUpperCase(), tenantId, merchantId, merchant
                     .owningAgentId(), normalizedChannel, normalizedProduct, eligible.channelConfigVersion(), eligible
-                        .requirementVersion(), identifierGenerator.nextId(new Object()).longValue(), draftRepository
-                            .nextKycVersionNo(tenantId, merchantId), eligible.pricingVersionId(), merchant
-                                .legalName(), actorUserId, now);
+                        .requirementVersion(), eligible.requirements(), identifierGenerator.nextId(new Object())
+                            .longValue(), draftRepository.nextKycVersionNo(tenantId, merchantId), eligible
+                                .pricingVersionId(), merchant.legalName(), actorUserId, now);
         try {
             draftRepository.insert(draft);
         } catch (OnboardingDraftConflictException ex) {

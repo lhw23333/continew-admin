@@ -41,6 +41,7 @@ public class KycAttachmentService {
 
     private final KycVersionOwnershipRepository ownershipRepository;
     private final KycAttachmentRepository attachmentRepository;
+    private final KycEvidenceRequirementPort evidenceRequirementPort;
     private final MerchantScopeAuthorizationService merchantScopeAuthorizationService;
     private final AgentRepository agentRepository;
     private final AttachmentContentInspectionPort contentInspectionPort;
@@ -53,9 +54,11 @@ public class KycAttachmentService {
     public KycAttachment upload(KycAttachmentUploadCommand command) {
         requireTenantContext(command.tenantId());
         requireMerchantAccess(command.tenantId(), command.actorUserId(), command.kycVersionId());
+        KycEvidenceRequirementPort.EvidenceRule evidenceRule = evidenceRequirementPort.requireUploadAllowed(command
+            .tenantId(), command.actorUserId(), command.kycVersionId(), command.evidenceType());
         byte[] content = command.content();
         try {
-            validateLimits(command, content.length);
+            validateLimits(command, content.length, evidenceRule);
             String safeOriginalName = safeOriginalName(command.originalName());
             String extension = extensionOf(safeOriginalName);
             if (!policy.allowedExtensions().contains(extension)) {
@@ -112,7 +115,9 @@ public class KycAttachmentService {
         return access;
     }
 
-    private void validateLimits(KycAttachmentUploadCommand command, int sizeBytes) {
+    private void validateLimits(KycAttachmentUploadCommand command,
+                                int sizeBytes,
+                                KycEvidenceRequirementPort.EvidenceRule evidenceRule) {
         if (sizeBytes > policy.maxSizeBytes()) {
             throw new KycAttachmentException("KYC attachment exceeds the configured size limit");
         }
@@ -123,6 +128,15 @@ public class KycAttachmentService {
         if (attachmentRepository.countByEvidenceType(command.tenantId(), command.kycVersionId(), command
             .evidenceType()) >= policy.maxPerEvidenceType()) {
             throw new KycAttachmentException("KYC evidence-type attachment count limit is reached");
+        }
+        if (!evidenceRule.required()) {
+            long optionalCount = attachmentRepository.listByKycVersion(command.tenantId(), command.kycVersionId())
+                .stream()
+                .filter(attachment -> evidenceRule.optionalEvidenceTypes().contains(attachment.evidenceType()))
+                .count();
+            if (optionalCount >= evidenceRule.maxOptionalAttachments()) {
+                throw new KycAttachmentException("KYC optional attachment count limit is reached");
+            }
         }
     }
 

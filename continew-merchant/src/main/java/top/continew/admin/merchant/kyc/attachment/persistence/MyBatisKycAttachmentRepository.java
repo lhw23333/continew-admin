@@ -24,6 +24,7 @@ import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentRepository;
 
 import java.util.Optional;
+import java.util.List;
 
 /** Tenant-explicit MyBatis KYC attachment repository. */
 @Repository
@@ -58,6 +59,20 @@ public class MyBatisKycAttachmentRepository implements KycAttachmentRepository {
             .eq(KycAttachmentDO::getId, attachmentId)
             .eq(KycAttachmentDO::getDeleted, 0L)
             .one()).map(this::toDomain);
+    }
+
+    @Override
+    public List<KycAttachment> listByKycVersion(Long tenantId, Long kycVersionId) {
+        return mapper.lambdaQuery()
+            .eq(KycAttachmentDO::getTenantId, tenantId)
+            .eq(KycAttachmentDO::getKycVersionId, kycVersionId)
+            .eq(KycAttachmentDO::getDeleted, 0L)
+            .orderByAsc(KycAttachmentDO::getSort)
+            .orderByAsc(KycAttachmentDO::getId)
+            .list()
+            .stream()
+            .map(this::toDomain)
+            .toList();
     }
 
     @Override

@@ -16,15 +16,18 @@
 
 package top.continew.admin.merchant.onboarding.application;
 
+import top.continew.admin.channel.dto.ChannelRequirementSummary;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
 /** Persisted server-side onboarding draft state. */
 public record OnboardingDraft(Long applicationId, String applicationNo, Long merchantId, Long owningAgentId,
                               String channelCode, String productCode, String channelConfigVersion,
-                              String requirementVersion, Long kycVersionId, Integer kycVersionNo, Long pricingVersionId,
-                              Integer savedStep, List<Integer> completedSteps, Long rowVersion,
-                              LocalDateTime createTime, LocalDateTime updateTime) {
+                              String requirementVersion, ChannelRequirementSummary requirementSummary,
+                              Long kycVersionId, Integer kycVersionNo, Long pricingVersionId, Integer savedStep,
+                              List<Integer> completedSteps, Long rowVersion, LocalDateTime createTime,
+                              LocalDateTime updateTime) {
 
     public OnboardingDraft {
         completedSteps = List.copyOf(completedSteps);

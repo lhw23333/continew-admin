@@ -138,6 +138,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifySameMerchantKycReuse();
     }
 
+    @Test
+    void onboardingEvidenceUsesRequirementSnapshotAndScanState() {
+        verifyOnboardingEvidenceCollection();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

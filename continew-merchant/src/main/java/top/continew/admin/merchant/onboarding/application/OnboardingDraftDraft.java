@@ -16,12 +16,15 @@
 
 package top.continew.admin.merchant.onboarding.application;
 
+import top.continew.admin.channel.dto.ChannelRequirementSummary;
+
 import java.time.LocalDateTime;
 
 /** Atomic application and KYC draft persistence values. */
 public record OnboardingDraftDraft(Long applicationId, String applicationNo, Long tenantId, Long merchantId,
                                    Long owningAgentId, String channelCode, String productCode,
-                                   String channelConfigVersion, String requirementVersion, Long kycVersionId,
+                                   String channelConfigVersion, String requirementVersion,
+                                   ChannelRequirementSummary requirementSummary, Long kycVersionId,
                                    Integer kycVersionNo, Long pricingVersionId, String legalName, Long createUser,
                                    LocalDateTime createTime) {
 }

@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
 import top.continew.admin.merchant.master.domain.MerchantDomainException;
+import top.continew.admin.channel.dto.ChannelRequirementSummary;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraft;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftConflictException;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftDraft;
@@ -76,6 +77,17 @@ public class MyBatisOnboardingDraftRepository implements OnboardingDraftReposito
     }
 
     @Override
+    public Optional<OnboardingDraft> findByKycVersionId(Long tenantId, Long kycVersionId) {
+        OnboardingApplicationDO application = applicationMapper.lambdaQuery()
+            .eq(OnboardingApplicationDO::getTenantId, tenantId)
+            .eq(OnboardingApplicationDO::getKycVersionId, kycVersionId)
+            .eq(OnboardingApplicationDO::getStatus, "DRAFT")
+            .eq(OnboardingApplicationDO::getDeleted, 0L)
+            .one();
+        return Optional.ofNullable(application).map(this::toDraft);
+    }
+
+    @Override
     public int nextKycVersionNo(Long tenantId, Long merchantId) {
         KycDraftVersionDO latest = kycVersionMapper.lambdaQuery()
             .select(KycDraftVersionDO::getVersionNo)
@@ -100,6 +112,7 @@ public class MyBatisOnboardingDraftRepository implements OnboardingDraftReposito
         application.setChannelCode(draft.channelCode());
         application.setProductCode(draft.productCode());
         application.setRequirementVersion(draft.requirementVersion());
+        application.setRequirementSummaryJson(writeRequirementSummary(draft.requirementSummary()));
         application.setChannelConfigVersion(draft.channelConfigVersion());
         application.setKycVersionId(draft.kycVersionId());
         application.setStatus("DRAFT");
@@ -175,10 +188,27 @@ public class MyBatisOnboardingDraftRepository implements OnboardingDraftReposito
         }
         return new OnboardingDraft(application.getId(), application.getApplicationNo(), application
             .getMerchantId(), application.getOwningAgentId(), application.getChannelCode(), application
-                .getProductCode(), application.getChannelConfigVersion(), application.getRequirementVersion(), kyc
-                    .getId(), kyc.getVersionNo(), kyc.getPricingVersionId(), kyc.getSavedStep(), readCompletedSteps(kyc
-                        .getStepCompletionJson()), kyc.getRowVersion(), application.getCreateTime(), kyc
-                            .getUpdateTime());
+                .getProductCode(), application.getChannelConfigVersion(), application
+                    .getRequirementVersion(), readRequirementSummary(application.getRequirementSummaryJson()), kyc
+                        .getId(), kyc.getVersionNo(), kyc.getPricingVersionId(), kyc
+                            .getSavedStep(), readCompletedSteps(kyc.getStepCompletionJson()), kyc
+                                .getRowVersion(), application.getCreateTime(), kyc.getUpdateTime());
+    }
+
+    private String writeRequirementSummary(ChannelRequirementSummary requirements) {
+        try {
+            return objectMapper.writeValueAsString(requirements);
+        } catch (JsonProcessingException ex) {
+            throw new MerchantDomainException("Onboarding requirement summary is invalid");
+        }
+    }
+
+    private ChannelRequirementSummary readRequirementSummary(String json) {
+        try {
+            return objectMapper.readValue(json, ChannelRequirementSummary.class);
+        } catch (JsonProcessingException ex) {
+            throw new MerchantDomainException("Stored onboarding requirement summary is invalid");
+        }
     }
 
     private String writeCompletedSteps(List<Integer> completedSteps) {

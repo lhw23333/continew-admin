@@ -72,7 +72,7 @@
 - [x] 7.1 Implement channel eligibility and requirement-version query using tenant, agent product, merchant type, and channel status
 - [x] 7.2 Implement onboarding draft, optimistic version, step-completion state, explicit save, reload recovery, and save-conflict response
 - [x] 7.3 Implement same-merchant KYC reuse with provenance, field allowlist, channel-specific exclusions, and expiry revalidation
-- [ ] 7.4 Implement evidence collection with private file object references, required-type validation, optional attachment limits, and scan status
+- [x] 7.4 Implement evidence collection with private file object references, required-type validation, optional attachment limits, and scan status
 - [ ] 7.5 Implement versioned legal subject, legal representative, operator, beneficiary, and individual/corporate shareholder commands and validation
 - [ ] 7.6 Implement ordinary/accelerated settlement-account modes with encrypted account data and pluggable verification port
 - [ ] 7.7 Implement pricing-version selection and parent-bound revalidation at save and final submission

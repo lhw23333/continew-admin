@@ -45,6 +45,8 @@ import top.continew.admin.merchant.onboarding.application.KycReuseField;
 import top.continew.admin.merchant.onboarding.application.KycReuseResult;
 import top.continew.admin.merchant.onboarding.application.KycReuseService;
 import top.continew.admin.merchant.onboarding.application.KycReuseSourceView;
+import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceService;
+import top.continew.admin.merchant.onboarding.application.OnboardingEvidenceSummary;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftService;
 import top.continew.admin.merchant.onboarding.application.OnboardingDraftView;
 import top.continew.starter.log.annotation.Log;
@@ -62,6 +64,7 @@ public class OnboardingDraftController {
 
     private final OnboardingDraftService onboardingDraftService;
     private final KycReuseService kycReuseService;
+    private final OnboardingEvidenceService onboardingEvidenceService;
 
     @Log(ignore = true)
     @Operation(summary = "创建或恢复活动草稿", description = "同一商户渠道产品重复调用返回现有活动草稿")
@@ -117,6 +120,15 @@ public class OnboardingDraftController {
         return kycReuseService.reuse(UserContextHolder.getTenantId(), UserContextHolder
             .getUserId(), merchantId, applicationId, req.getSourceKycVersionId(), req.getFields(), req
                 .getExpectedVersion(), JakartaServletUtil.getClientIP(request));
+    }
+
+    @Log(ignore = true)
+    @Operation(summary = "查询草稿材料完整性", description = "按创建草稿时快照的要求版本返回必传、可选、扫描和校验状态")
+    @SaCheckPermission("merchant:onboarding:create")
+    @GetMapping("/{applicationId}/evidence")
+    public OnboardingEvidenceSummary evidence(@PathVariable Long merchantId, @PathVariable Long applicationId) {
+        return onboardingEvidenceService.summary(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), merchantId, applicationId);
     }
 
     @Getter

@@ -16,19 +16,17 @@
 
 package top.continew.admin.merchant.kyc.attachment;
 
-import java.util.Optional;
-import java.util.List;
+import java.util.Set;
 
-/** Tenant-explicit KYC attachment metadata repository. */
-public interface KycAttachmentRepository {
+/** Draft-owned channel evidence rule enforced by every attachment upload path. */
+public interface KycEvidenceRequirementPort {
 
-    long countByKycVersion(Long tenantId, Long kycVersionId);
+    EvidenceRule requireUploadAllowed(Long tenantId, Long actorUserId, Long kycVersionId, String evidenceType);
 
-    long countByEvidenceType(Long tenantId, Long kycVersionId, String evidenceType);
-
-    Optional<KycAttachment> findById(Long tenantId, Long attachmentId);
-
-    List<KycAttachment> listByKycVersion(Long tenantId, Long kycVersionId);
-
-    KycAttachment insert(KycAttachmentDraft draft);
+    record EvidenceRule(String requirementVersion, boolean required, Set<String> optionalEvidenceTypes,
+                        int maxOptionalAttachments) {
+        public EvidenceRule {
+            optionalEvidenceTypes = Set.copyOf(optionalEvidenceTypes);
+        }
+    }
 }

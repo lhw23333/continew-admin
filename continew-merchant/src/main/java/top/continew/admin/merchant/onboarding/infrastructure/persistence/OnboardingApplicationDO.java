@@ -36,6 +36,7 @@ public class OnboardingApplicationDO extends TenantBaseDO {
     private String channelCode;
     private String productCode;
     private String requirementVersion;
+    private String requirementSummaryJson;
     private String channelConfigVersion;
     private Long kycVersionId;
     private String status;
