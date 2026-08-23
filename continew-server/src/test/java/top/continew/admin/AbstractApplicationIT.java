@@ -504,8 +504,19 @@ abstract class AbstractApplicationIT {
                 .code());
             workflowService.unclaim(new UnclaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
             workflowService.claim(new ClaimTaskCommand(tenantId, task.taskId(), reviewerUserId));
-            workflowService.complete(new CompleteTaskCommand(tenantId, task.taskId(), reviewerUserId, Map
-                .of("requiresSupplement", Boolean.FALSE)));
+            List<RuntimeException> completionFailures = runConcurrentOperations(() -> workflowService
+                .complete(new CompleteTaskCommand(tenantId, task.taskId(), reviewerUserId, Map
+                    .of("requiresSupplement", Boolean.FALSE))));
+            org.junit.jupiter.api.Assertions.assertEquals(1, completionFailures
+                .stream()
+                .filter(java.util.Objects::isNull)
+                .count());
+            RuntimeException completionFailure = completionFailures
+                .stream()
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElseThrow();
+            org.junit.jupiter.api.Assertions.assertInstanceOf(WorkflowOperationException.class, completionFailure);
 
             WorkflowPage<WorkflowTask> done = workflowService
                 .pageDone(new WorkflowDoneQuery(tenantId, reviewerUserId, processKey, businessKey, "Review", 1, 20));
@@ -571,6 +582,47 @@ abstract class AbstractApplicationIT {
         return workflowService.start(command);
     }
 
+    private List<RuntimeException> runConcurrentOperations(Runnable operation) {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<RuntimeException>> futures = List.of(executor
+                .submit(() -> runConcurrentOperation(ready, start, operation)), executor
+                    .submit(() -> runConcurrentOperation(ready, start, operation)));
+            org.junit.jupiter.api.Assertions.assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            return futures.stream().map(future -> {
+                try {
+                    return future.get(30, TimeUnit.SECONDS);
+                } catch (Exception ex) {
+                    throw new AssertionError(ex);
+                }
+            }).toList();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(ex);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private RuntimeException runConcurrentOperation(CountDownLatch ready,
+                                                    CountDownLatch start,
+                                                    Runnable operation) {
+        ready.countDown();
+        try {
+            start.await();
+            operation.run();
+            return null;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return new IllegalStateException("Concurrent operation was interrupted", ex);
+        } catch (RuntimeException ex) {
+            return ex;
+        }
+    }
+
     protected void verifyOnboardingReviewActionsAndImmutableRecords() {
         long tenantId = 932L;
         long riskUserId = 93211L;
@@ -584,6 +636,7 @@ abstract class AbstractApplicationIT {
         long applicationApproveId = 932301L;
         long applicationRejectId = 932302L;
         long applicationSelfReviewId = 932303L;
+        long applicationConcurrentId = 932304L;
         long approveSourceKycVersionId = 1932301L;
         String processKey = "workflow-review-action-test-v1";
         LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 22, 10, 0);
@@ -619,6 +672,7 @@ abstract class AbstractApplicationIT {
             insertReviewApplication(tenantId, applicationApproveId, merchantId, merchantAgentId, applicantUserId, approveSourceKycVersionId, 1, fixtureTime);
             insertReviewApplication(tenantId, applicationRejectId, merchantId, merchantAgentId, applicantUserId, 1932302L, 2, fixtureTime);
             insertReviewApplication(tenantId, applicationSelfReviewId, merchantId, merchantAgentId, applicantUserId, 1932303L, 3, fixtureTime);
+            insertReviewApplication(tenantId, applicationConcurrentId, merchantId, merchantAgentId, applicantUserId, 1932304L, 4, fixtureTime);
             kycAttachmentRepository
                 .insert(new KycAttachmentDraft(tenantId, approveSourceKycVersionId, "BUSINESS_LICENSE", "private|review/source-license", "source-license.png", "png", "image/png", "image/png", 10L, "8"
                     .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, fixtureTime));
@@ -744,23 +798,50 @@ abstract class AbstractApplicationIT {
                         .review(new OnboardingReviewCommand(tenantId, applicantUserId, selfReviewTask
                             .taskId(), 3L, OnboardingReviewAction.APPROVE, "Self review", List.of(), "127.0.0.1")));
 
+                WorkflowRef concurrentFlow = startReviewWorkflow(tenantId, processKey, applicationConcurrentId, 4L, merchantId, merchantAgentId, applicantUserId);
+                WorkflowTask concurrentTask = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, reviewerUserId, processKey, concurrentFlow
+                        .businessKey(), null, false, 1, 20))
+                    .items()
+                    .get(0);
+                workflowService.claim(new ClaimTaskCommand(tenantId, concurrentTask.taskId(), reviewerUserId));
+                OnboardingReviewCommand concurrentCommand = new OnboardingReviewCommand(tenantId, reviewerUserId, concurrentTask
+                    .taskId(), 4L, OnboardingReviewAction.APPROVE, "Concurrent approval", List.of(), "127.0.0.1");
+                List<RuntimeException> reviewFailures = runConcurrentOperations(() -> onboardingReviewService
+                    .review(concurrentCommand));
+                org.junit.jupiter.api.Assertions.assertEquals(1, reviewFailures
+                    .stream()
+                    .filter(java.util.Objects::isNull)
+                    .count());
+                RuntimeException reviewFailure = reviewFailures
+                    .stream()
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElseThrow();
+                org.junit.jupiter.api.Assertions.assertTrue(reviewFailure instanceof MerchantDomainException
+                    || reviewFailure instanceof WorkflowOperationException);
+
                 org.junit.jupiter.api.Assertions
                     .assertEquals("APPROVED", reviewApplicationStatus(tenantId, applicationApproveId));
                 org.junit.jupiter.api.Assertions
                     .assertEquals("REJECTED", reviewApplicationStatus(tenantId, applicationRejectId));
                 org.junit.jupiter.api.Assertions
                     .assertEquals("SUBMITTED", reviewApplicationStatus(tenantId, applicationSelfReviewId));
+                org.junit.jupiter.api.Assertions
+                    .assertEquals("APPROVED", reviewApplicationStatus(tenantId, applicationConcurrentId));
                 org.junit.jupiter.api.Assertions.assertEquals(4, jdbcTemplate
                     .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationApproveId));
                 org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
                     .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationRejectId));
                 org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate
                     .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationSelfReviewId));
+                org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate
+                    .queryForObject("SELECT COUNT(*) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Integer.class, tenantId, applicationConcurrentId));
                 Long reviewRecordId = jdbcTemplate
                     .queryForObject("SELECT MIN(id) FROM biz_review_record WHERE tenant_id = ? AND business_id = ?", Long.class, tenantId, applicationApproveId);
                 org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate
                     .update("UPDATE biz_review_record SET opinion = 'tampered' WHERE id = ?", reviewRecordId));
-                org.junit.jupiter.api.Assertions.assertEquals(5, jdbcTemplate
+                org.junit.jupiter.api.Assertions.assertEquals(6, jdbcTemplate
                     .queryForObject("SELECT COUNT(*) FROM biz_security_audit WHERE tenant_id = ? AND action LIKE 'WORKFLOW_REVIEW_%'", Integer.class, tenantId));
             });
         } finally {

@@ -87,7 +87,7 @@
 > task 7.12 after the supplementation domain path is complete.
 
 - [x] 7.11 Implement supplementation as a new linked KYC version with field/attachment diff and no direct mutation of submitted versions
-- [ ] 7.12 Implement Vue five-step wizard, local unsaved state, explicit save indicator, reload recovery, preview, conflict resolution, and safe attachment viewer
+- [x] 7.12 Implement Vue five-step wizard, local unsaved state, explicit save indicator, reload recovery, preview, conflict resolution, and safe attachment viewer
 
 ## 8. Flowable Adapter and Task Center
 

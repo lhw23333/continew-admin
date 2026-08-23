@@ -179,12 +179,12 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
-    void workflowAdapterSupportsCommandsQueriesAndSanitizedHistory() throws Exception {
+    void workflowAdapterRejectsConcurrentCompletionAndKeepsSanitizedHistory() throws Exception {
         verifyWorkflowAdapterCommandsAndQueries();
     }
 
     @Test
-    void onboardingReviewActionsArePolicyControlledAndImmutable() {
+    void onboardingReviewActionsRejectStaleDomainVersionsAndRemainImmutable() {
         verifyOnboardingReviewActionsAndImmutableRecords();
     }
 
