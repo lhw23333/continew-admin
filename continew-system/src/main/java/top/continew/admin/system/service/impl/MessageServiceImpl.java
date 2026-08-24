@@ -22,6 +22,9 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +47,7 @@ import top.continew.starter.messaging.websocket.util.WebSocketUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.LocalDateTime;
 
 /**
  * 消息业务实现
@@ -58,6 +62,8 @@ public class MessageServiceImpl implements MessageService {
 
     private final MessageMapper baseMapper;
     private final MessageLogService messageLogService;
+    private final IdentifierGenerator identifierGenerator;
+    private final ObjectMapper objectMapper;
 
     @Override
     @AutoOperate(type = MessageResp.class, on = "list")
@@ -110,20 +116,43 @@ public class MessageServiceImpl implements MessageService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void add(MessageReq req, List<String> userIdList) {
+        addAndReturnId(req, userIdList);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long addAndReturnId(MessageReq req, List<String> userIdList) {
         MessageDO message = BeanUtil.copyProperties(req, MessageDO.class);
         message.setScope(CollUtil.isEmpty(userIdList) ? NoticeScopeEnum.ALL : NoticeScopeEnum.USER);
         message.setUsers(userIdList);
-        baseMapper.insert(message);
+        message.setId(identifierGenerator.nextId(message).longValue());
+        message.setCreateTime(LocalDateTime.now());
+        if (baseMapper.insertMessage(message, message.getType().getValue(), message.getScope()
+            .getValue(), usersJson(userIdList)) != 1) {
+            throw new IllegalStateException("Message persistence failed");
+        }
         // 发送消息给指定在线用户
         if (CollUtil.isNotEmpty(userIdList)) {
             userIdList.parallelStream().forEach(userId -> {
                 List<String> tokenList = StpUtil.getTokenValueListByLoginId(userId);
                 tokenList.parallelStream().forEach(token -> WebSocketUtils.sendMessage(token, "1"));
             });
-            return;
+            return message.getId();
         }
         // 发送消息给所有在线用户
         WebSocketUtils.sendMessage("1");
+        return message.getId();
+    }
+
+    private String usersJson(List<String> userIdList) {
+        if (CollUtil.isEmpty(userIdList)) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(userIdList);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Message recipients are invalid", ex);
+        }
     }
 
     @Override

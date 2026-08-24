@@ -59,6 +59,8 @@ flowable:
 merchant:
   outbox:
     scheduler-enabled: false
+  workflow-notification:
+    scheduler-enabled: false
   security:
     data-key-ref: env://merchant.test.data-key
     hash-key-ref: env://merchant.test.hash-key

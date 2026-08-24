@@ -140,6 +140,8 @@ import top.continew.admin.service.merchant.MerchantReverificationRoutingService;
 import top.continew.admin.service.merchant.MerchantReverificationRoutingService.MerchantReverificationChangeType;
 import top.continew.admin.service.merchant.SubordinateAgentProvisioningResult;
 import top.continew.admin.service.merchant.SubordinateAgentProvisioningService;
+import top.continew.admin.service.workflow.WorkflowNotificationBatchResult;
+import top.continew.admin.service.workflow.WorkflowTaskNotificationProcessor;
 import top.continew.admin.auth.service.OnlineUserService;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 import top.continew.admin.workflow.internal.flowable.FlowableEnginePolicyProperties;
@@ -318,6 +320,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private WorkflowOutboxPolicy workflowOutboxPolicy;
+
+    @Autowired
+    private WorkflowTaskNotificationProcessor workflowTaskNotificationProcessor;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -927,6 +932,17 @@ abstract class AbstractApplicationIT {
                         .businessKey(), null, false, 1, 20))
                     .items()
                     .get(0);
+                processEngine.getTaskService()
+                    .setDueDate(initialReviewTask.taskId(), java.util.Date.from(java.time.Instant.now()
+                        .minusSeconds(60)));
+                WorkflowNotificationBatchResult firstNotifications = workflowTaskNotificationProcessor
+                    .process(200, 200);
+                org.junit.jupiter.api.Assertions.assertEquals(2, firstNotifications.enqueued());
+                org.junit.jupiter.api.Assertions.assertEquals(2, firstNotifications.sent());
+                WorkflowNotificationBatchResult duplicateNotifications = workflowTaskNotificationProcessor
+                    .process(200, 200);
+                org.junit.jupiter.api.Assertions.assertEquals(0, duplicateNotifications.enqueued());
+                org.junit.jupiter.api.Assertions.assertEquals(0, duplicateNotifications.sent());
                 WorkflowPage<WorkflowTaskView> taskCenterTodo = workflowTaskCenterService
                     .pageTodo(new WorkflowTaskQuery(tenantId, riskUserId, processKey, approveFlow
                         .businessKey(), null, false, 1, 20));
@@ -1091,6 +1107,32 @@ abstract class AbstractApplicationIT {
                     .update("UPDATE biz_review_record SET opinion = 'tampered' WHERE id = ?", reviewRecordId));
                 org.junit.jupiter.api.Assertions.assertEquals(6, jdbcTemplate
                     .queryForObject("SELECT COUNT(*) FROM biz_security_audit WHERE tenant_id = ? AND action LIKE 'WORKFLOW_REVIEW_%'", Integer.class, tenantId));
+                WorkflowNotificationBatchResult finalNotifications = workflowTaskNotificationProcessor
+                    .process(200, 200);
+                org.junit.jupiter.api.Assertions.assertTrue(finalNotifications.sent() >= 1);
+                int notificationCount = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM biz_workflow_notification WHERE tenant_id = ?
+                    """, Integer.class, tenantId);
+                org.junit.jupiter.api.Assertions.assertEquals(notificationCount, jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM sys_message WHERE tenant_id = ? AND deleted = 0
+                    """, Integer.class, tenantId));
+                org.junit.jupiter.api.Assertions.assertEquals(notificationCount, jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM biz_workflow_notification
+                    WHERE tenant_id = ? AND status = 'SENT' AND path LIKE '/merchant/workflow?%'
+                    """, Integer.class, tenantId));
+                org.junit.jupiter.api.Assertions.assertTrue(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM biz_workflow_notification
+                    WHERE tenant_id = ? AND event_type = 'TASK_OVERDUE'
+                    """, Integer.class, tenantId) >= 2);
+                org.junit.jupiter.api.Assertions.assertTrue(jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM biz_workflow_notification
+                    WHERE tenant_id = ? AND event_type IN ('TASK_TRANSFERRED', 'REVIEW_RESULT')
+                    """, Integer.class, tenantId) >= 2);
+                WorkflowNotificationBatchResult finalDuplicate = workflowTaskNotificationProcessor.process(200, 200);
+                org.junit.jupiter.api.Assertions.assertEquals(0, finalDuplicate.sent());
+                org.junit.jupiter.api.Assertions.assertEquals(notificationCount, jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM biz_workflow_notification WHERE tenant_id = ?
+                    """, Integer.class, tenantId));
             });
         } finally {
             processEngine.getRepositoryService().deleteDeployment(deployment.deploymentId(), true);

@@ -77,6 +77,9 @@ public interface MessageService {
      */
     void add(MessageReq req, List<String> userIdList);
 
+    /** Adds a message and returns its persisted ID for idempotent workflow notification correlation. */
+    Long addAndReturnId(MessageReq req, List<String> userIdList);
+
     /**
      * 删除
      *

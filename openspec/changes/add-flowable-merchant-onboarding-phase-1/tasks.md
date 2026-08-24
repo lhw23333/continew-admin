@@ -101,7 +101,7 @@
 - [x] 8.8 Implement BPMN deployment verification, stable process keys/node IDs, immutable resource metadata, and in-flight version policy
 - [x] 8.9 Implement `merchant-onboarding-review-v1` BPMN with optional AI step, human review, approve/reject/supplement/resubmit paths, and timers
 - [x] 8.10 Implement Vue todo, claimed, done, process-history, task detail, sanitized business summary, supplementation diff, and action dialogs
-- [ ] 8.11 Implement assignment/result/overdue ContiNew messages with notification idempotency and authorized deep links
+- [x] 8.11 Implement assignment/result/overdue ContiNew messages with notification idempotency and authorized deep links
 
 ## 9. Channel Onboarding Integration
 

@@ -54,6 +54,7 @@ The Vue task center provides:
 - immutable domain review records and Flowable activity history;
 - claim/unclaim, approve, reject, request-supplement, resubmit, and risk transfer dialogs;
 - client-side action visibility based on task state and button permission, backed by server-side validation.
+- authorized `tab`/`taskId` deep-link handling for ContiNew user messages; every deep link reloads task authorization.
 
 Review forms warn operators not to place sensitive values in opinions. Reject and supplement actions require opinions,
 and supplement requests require normalized issue codes.

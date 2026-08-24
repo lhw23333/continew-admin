@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" ?> <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="top.continew.admin.system.mapper.MessageMapper">
+    <insert id="insertMessage">
+        INSERT INTO sys_message
+        (id, title, content, type, path, scope, users, create_time, deleted)
+        VALUES
+        (#{message.id}, #{message.title}, #{message.content}, #{type}, #{message.path}, #{scope},
+        <choose>
+            <when test="_databaseId == 'pgsql'">CAST(#{usersJson} AS json)</when>
+            <otherwise>#{usersJson}</otherwise>
+        </choose>,
+        #{message.createTime}, 0)
+    </insert>
+
     <resultMap id="messageDetailMap" type="top.continew.admin.system.model.resp.message.MessageDetailResp">
         <id column="id" property="id" />
         <result property="users" column="users" typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler" />

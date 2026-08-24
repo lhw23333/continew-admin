@@ -70,4 +70,10 @@ public interface MessageMapper extends BaseMapper<MessageDO> {
      * @return 未读消息数量
      */
     Long selectUnreadCountByUserIdAndType(@Param("userId") Long userId, @Param("type") Integer type);
+
+    /** Cross-database insert with an explicit JSON cast for targeted recipient IDs. */
+    int insertMessage(@Param("message") MessageDO message,
+                      @Param("type") Integer type,
+                      @Param("scope") Integer scope,
+                      @Param("usersJson") String usersJson);
 }

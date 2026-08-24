@@ -62,6 +62,7 @@ public class OnboardingReviewService {
     private final IdentifierGenerator identifierGenerator;
     private final ObjectMapper objectMapper;
     private final SecurityAuditWriter securityAuditWriter;
+    private final WorkflowNotificationPort notificationPort;
     private final Clock clock = Clock.systemDefaultZone();
 
     public OnboardingReviewService(WorkflowService workflowService,
@@ -71,7 +72,8 @@ public class OnboardingReviewService {
                                    OnboardingSupplementRepository supplementRepository,
                                    IdentifierGenerator identifierGenerator,
                                    ObjectMapper objectMapper,
-                                   SecurityAuditWriter securityAuditWriter) {
+                                   SecurityAuditWriter securityAuditWriter,
+                                   WorkflowNotificationPort notificationPort) {
         this.workflowService = workflowService;
         this.mappingService = mappingService;
         this.authorizationPort = authorizationPort;
@@ -80,6 +82,7 @@ public class OnboardingReviewService {
         this.identifierGenerator = identifierGenerator;
         this.objectMapper = objectMapper;
         this.securityAuditWriter = securityAuditWriter;
+        this.notificationPort = notificationPort;
     }
 
     @Transactional
@@ -117,6 +120,7 @@ public class OnboardingReviewService {
         workflowService.complete(new CompleteTaskCommand(command.tenantId(), task.taskId(), actor.userId(), Map
             .of("reviewAction", command.action().name(), "requiresSupplement", OnboardingReviewAction.REQUEST_SUPPLEMENT
                 .equals(command.action()), "kycVersion", command.businessVersion())));
+        enqueueReviewResult(command, context, mapping, task, decision, reviewRecordId);
         audit(command.tenantId(), actor.userId(), context, mapping.businessVersion(), "WORKFLOW_REVIEW_" + command
             .action()
             .name(), "reviewRecordId=" + reviewRecordId, command.ipAddress(), now);
@@ -155,6 +159,10 @@ public class OnboardingReviewService {
                     .userId())), now));
         workflowService.transfer(new TransferTaskCommand(command.tenantId(), task.taskId(), actor.userId(), target
             .userId()));
+        notificationPort.enqueue(new WorkflowNotificationDraft(command.tenantId(), "WORKFLOW_TRANSFER:%s:%s"
+            .formatted(reviewRecordId, target.userId()), "TASK_TRANSFERRED", target.userId(), mapping
+                .processInstanceId(), task.taskId(), "审核任务已转派给您", "进件 %s 的审核任务已转派，请及时处理。".formatted(context
+                    .applicationId()), taskPath("claimed", task.taskId())));
         audit(command.tenantId(), actor.userId(), context, mapping
             .businessVersion(), "WORKFLOW_REVIEW_TRANSFER", "reviewRecordId=%s;targetUserId=%s"
                 .formatted(reviewRecordId, target.userId()), command.ipAddress(), now);
@@ -272,6 +280,37 @@ public class OnboardingReviewService {
         securityAuditWriter.append(new SecurityAuditRecord(tenantId, actorUserId, context
             .owningAgentId(), action, "ONBOARDING_APPLICATION", context
                 .applicationId(), businessVersion, "REVIEW_ACTION", reason, ipAddress, SecurityAuditResult.SUCCESS, null, now));
+    }
+
+    private void enqueueReviewResult(OnboardingReviewCommand command,
+                                     OnboardingReviewContext context,
+                                     WorkflowInstanceMapping mapping,
+                                     WorkflowTask task,
+                                     ReviewDecision decision,
+                                     Long reviewRecordId) {
+        if (OnboardingReviewAction.RESUBMIT.equals(command.action())) {
+            return;
+        }
+        Set<Long> recipients = new java.util.LinkedHashSet<>();
+        recipients.add(context.submittedBy());
+        recipients.add(context.merchantOperatorUserId());
+        recipients.remove(command.actorUserId());
+        String title = switch (command.action()) {
+            case APPROVE -> "进件审核已通过";
+            case REJECT -> "进件审核已拒绝";
+            case REQUEST_SUPPLEMENT -> "进件需要补充材料";
+            case RESUBMIT -> "进件已重新提交";
+        };
+        for (Long recipient : recipients) {
+            notificationPort.enqueue(new WorkflowNotificationDraft(command.tenantId(), "WORKFLOW_RESULT:%s:%s"
+                .formatted(reviewRecordId, recipient), "REVIEW_RESULT", recipient, mapping.processInstanceId(), task
+                    .taskId(), title, "进件 %s 当前状态为 %s，请在任务中心查看。".formatted(context.applicationId(), decision
+                        .targetStatus()), taskPath("done", task.taskId())));
+        }
+    }
+
+    private String taskPath(String tab, String taskId) {
+        return "/merchant/workflow?tab=%s&taskId=%s".formatted(tab, taskId);
     }
 
     private record ReviewDecision(String targetStatus, String opinion, List<String> issueCodes) {
