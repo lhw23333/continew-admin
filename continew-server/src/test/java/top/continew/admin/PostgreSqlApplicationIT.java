@@ -194,6 +194,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingReviewActionsAndImmutableRecords();
     }
 
+    @Test
+    void workflowOutboxIsIdempotentRetryableAndRepairable() {
+        verifyWorkflowOutboxDeliveryRetryAndRepair();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         List<String> plan = jdbcTemplate.queryForList(explainSql, String.class);
         assertTrue(plan.stream()

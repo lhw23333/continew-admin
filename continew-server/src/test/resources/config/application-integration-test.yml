@@ -57,6 +57,8 @@ flowable:
   database-schema-update: true
 
 merchant:
+  outbox:
+    scheduler-enabled: false
   security:
     data-key-ref: env://merchant.test.data-key
     hash-key-ref: env://merchant.test.hash-key

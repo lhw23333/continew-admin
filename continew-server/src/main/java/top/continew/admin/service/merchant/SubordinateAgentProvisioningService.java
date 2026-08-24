@@ -79,7 +79,7 @@ public class SubordinateAgentProvisioningService {
 
         Long agentId = identifierGenerator.nextId(new Object()).longValue();
         DeptDO department = createDepartment(command, parentDept, agentId);
-        Long roleId = loadAgentAdminRoleId();
+        Long roleId = loadAgentAdminRoleId(command.tenantId());
         if (roleId == null) {
             throw new AgentDomainException("Agent administrator role is unavailable");
         }
@@ -154,11 +154,11 @@ public class SubordinateAgentProvisioningService {
         }
     }
 
-    private Long loadAgentAdminRoleId() {
+    private Long loadAgentAdminRoleId(Long tenantId) {
         try {
             return jdbcTemplate.queryForObject("""
-                SELECT id FROM sys_role WHERE code = ? AND deleted = 0
-                """, Long.class, AGENT_ADMIN_ROLE_CODE);
+                SELECT id FROM sys_role WHERE tenant_id = ? AND code = ? AND deleted = 0
+                """, Long.class, tenantId, AGENT_ADMIN_ROLE_CODE);
         } catch (EmptyResultDataAccessException ex) {
             return null;
         }

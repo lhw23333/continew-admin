@@ -123,10 +123,10 @@ public class OnboardingSubmissionService {
     }
 
     private String workflowPayload(OnboardingSubmissionState state, Long applicantId, Long businessVersion) {
-        WorkflowStartPayload payload = new WorkflowStartPayload(state.applicationId(), state.merchantId(), state
-            .owningAgentId(), state.kycVersionId(), state.kycVersionNo(), businessVersion, state.channelCode(), state
-                .productCode(), applicantId, PROCESS_DEFINITION_KEY, "%s:MERCHANT_ONBOARDING:%s:%s".formatted(state
-                    .tenantId(), state.applicationId(), businessVersion));
+        OnboardingWorkflowStartPayload payload = new OnboardingWorkflowStartPayload(state.applicationId(), state
+            .merchantId(), state.owningAgentId(), state.kycVersionId(), state.kycVersionNo(), businessVersion, state
+                .channelCode(), state.productCode(), applicantId, PROCESS_DEFINITION_KEY, "%s:MERCHANT_ONBOARDING:%s:%s"
+                    .formatted(state.tenantId(), state.applicationId(), businessVersion));
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException ex) {
@@ -164,9 +164,4 @@ public class OnboardingSubmissionService {
         }
     }
 
-    private record WorkflowStartPayload(Long applicationId, Long merchantId, Long owningAgentId, Long kycVersionId,
-                                        Integer kycVersion, Long businessVersion, String channelCode,
-                                        String productCode, Long applicantId, String processDefinitionKey,
-                                        String businessKey) {
-    }
 }

@@ -72,8 +72,8 @@ public class MerchantProvisioningService {
             throw new MerchantDomainException("Owning agent identity mapping is unavailable");
         }
 
-        Long operatorRoleId = loadRoleId(OPERATOR_ROLE_CODE);
-        Long reviewerRoleId = loadRoleId(REVIEWER_ROLE_CODE);
+        Long operatorRoleId = loadRoleId(command.tenantId(), OPERATOR_ROLE_CODE);
+        Long reviewerRoleId = loadRoleId(command.tenantId(), REVIEWER_ROLE_CODE);
         if (operatorRoleId == null || reviewerRoleId == null || operatorRoleId.equals(reviewerRoleId)) {
             throw new MerchantDomainException("Merchant identity roles are unavailable");
         }
@@ -161,10 +161,10 @@ public class MerchantProvisioningService {
         }
     }
 
-    private Long loadRoleId(String roleCode) {
+    private Long loadRoleId(Long tenantId, String roleCode) {
         try {
             return jdbcTemplate
-                .queryForObject("SELECT id FROM sys_role WHERE code = ? AND deleted = 0", Long.class, roleCode);
+                .queryForObject("SELECT id FROM sys_role WHERE tenant_id = ? AND code = ? AND deleted = 0", Long.class, tenantId, roleCode);
         } catch (EmptyResultDataAccessException ex) {
             return null;
         }

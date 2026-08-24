@@ -147,6 +147,15 @@ continew-starter.encrypt.field:
 
 --- ### 商户敏感数据与渠道密钥引用
 merchant:
+  outbox:
+    enabled: true
+    scheduler-enabled: true
+    poll-interval-ms: 5000
+    batch-size: 20
+    max-retries: 5
+    base-retry-delay: 5s
+    max-retry-delay: 15m
+    lock-timeout: 5m
   security:
     data-key-ref: ${MERCHANT_DATA_KEY_REF}
     hash-key-ref: ${MERCHANT_HASH_KEY_REF}

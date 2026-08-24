@@ -188,6 +188,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyOnboardingReviewActionsAndImmutableRecords();
     }
 
+    @Test
+    void workflowOutboxIsIdempotentRetryableAndRepairable() {
+        verifyWorkflowOutboxDeliveryRetryAndRepair();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

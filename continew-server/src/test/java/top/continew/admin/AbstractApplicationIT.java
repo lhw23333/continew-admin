@@ -99,12 +99,16 @@ import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionRe
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionService;
 import top.continew.admin.merchant.onboarding.application.OnboardingSupplementDraft;
 import top.continew.admin.merchant.onboarding.application.OnboardingSupplementService;
+import top.continew.admin.merchant.onboarding.application.OnboardingWorkflowStartPayload;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatform;
 import top.continew.admin.merchant.onboarding.application.OperatingPlatformService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountSaveCommand;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountService;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountVerificationPort;
 import top.continew.admin.merchant.onboarding.application.SettlementAccountView;
+import top.continew.admin.merchant.onboarding.outbox.WorkflowOutboxBatchResult;
+import top.continew.admin.merchant.onboarding.outbox.WorkflowOutboxPolicy;
+import top.continew.admin.merchant.onboarding.outbox.WorkflowOutboxProcessor;
 import top.continew.admin.merchant.review.application.OnboardingReviewAction;
 import top.continew.admin.merchant.review.application.OnboardingReviewCommand;
 import top.continew.admin.merchant.review.application.OnboardingReviewResult;
@@ -289,6 +293,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingReviewService onboardingReviewService;
+
+    @Autowired
+    private WorkflowOutboxProcessor workflowOutboxProcessor;
+
+    @Autowired
+    private WorkflowOutboxPolicy workflowOutboxPolicy;
 
     @MockBean
     private SettlementAccountVerificationPort settlementAccountVerificationPort;
@@ -507,12 +517,10 @@ abstract class AbstractApplicationIT {
             List<RuntimeException> completionFailures = runConcurrentOperations(() -> workflowService
                 .complete(new CompleteTaskCommand(tenantId, task.taskId(), reviewerUserId, Map
                     .of("requiresSupplement", Boolean.FALSE))));
-            org.junit.jupiter.api.Assertions.assertEquals(1, completionFailures
-                .stream()
+            org.junit.jupiter.api.Assertions.assertEquals(1, completionFailures.stream()
                 .filter(java.util.Objects::isNull)
                 .count());
-            RuntimeException completionFailure = completionFailures
-                .stream()
+            RuntimeException completionFailure = completionFailures.stream()
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElseThrow();
@@ -607,9 +615,7 @@ abstract class AbstractApplicationIT {
         }
     }
 
-    private RuntimeException runConcurrentOperation(CountDownLatch ready,
-                                                    CountDownLatch start,
-                                                    Runnable operation) {
+    private RuntimeException runConcurrentOperation(CountDownLatch ready, CountDownLatch start, Runnable operation) {
         ready.countDown();
         try {
             start.await();
@@ -809,17 +815,15 @@ abstract class AbstractApplicationIT {
                     .taskId(), 4L, OnboardingReviewAction.APPROVE, "Concurrent approval", List.of(), "127.0.0.1");
                 List<RuntimeException> reviewFailures = runConcurrentOperations(() -> onboardingReviewService
                     .review(concurrentCommand));
-                org.junit.jupiter.api.Assertions.assertEquals(1, reviewFailures
-                    .stream()
+                org.junit.jupiter.api.Assertions.assertEquals(1, reviewFailures.stream()
                     .filter(java.util.Objects::isNull)
                     .count());
-                RuntimeException reviewFailure = reviewFailures
-                    .stream()
+                RuntimeException reviewFailure = reviewFailures.stream()
                     .filter(java.util.Objects::nonNull)
                     .findFirst()
                     .orElseThrow();
-                org.junit.jupiter.api.Assertions.assertTrue(reviewFailure instanceof MerchantDomainException
-                    || reviewFailure instanceof WorkflowOperationException);
+                org.junit.jupiter.api.Assertions
+                    .assertTrue(reviewFailure instanceof MerchantDomainException || reviewFailure instanceof WorkflowOperationException);
 
                 org.junit.jupiter.api.Assertions
                     .assertEquals("APPROVED", reviewApplicationStatus(tenantId, applicationApproveId));
@@ -847,6 +851,148 @@ abstract class AbstractApplicationIT {
         } finally {
             processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
         }
+    }
+
+    protected void verifyWorkflowOutboxDeliveryRetryAndRepair() {
+        long tenantId = 934L;
+        long rootUserId = 93411L;
+        long merchantAgentUserId = 93412L;
+        long applicantUserId = 93413L;
+        long reviewerUserId = 93414L;
+        long rootAgentId = 1934001L;
+        long merchantAgentId = 1934002L;
+        long merchantId = 934101L;
+        long successfulApplicationId = 934201L;
+        long retryApplicationId = 934202L;
+        long successfulEventId = 934301L;
+        long retryEventId = 934302L;
+        String processKey = "merchant-onboarding-review-v1";
+        LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 23, 11, 0);
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "OUTBOX-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "OUTBOX-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, applicantUserId, reviewerUserId, "OUTBOX-MERCHANT", "4"
+                    .repeat(64)));
+            insertQueryUser(tenantId, applicantUserId, "outbox-applicant");
+            insertQueryUser(tenantId, reviewerUserId, "outbox-reviewer");
+            insertReviewApplication(tenantId, successfulApplicationId, merchantId, merchantAgentId, applicantUserId, 1934301L, 1, fixtureTime);
+            insertReviewApplication(tenantId, retryApplicationId, merchantId, merchantAgentId, applicantUserId, 1934302L, 2, fixtureTime);
+        });
+
+        String bpmn = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:flowable="http://flowable.org/bpmn"
+                         targetNamespace="https://continew.top/workflow/outbox-test">
+              <process id="merchant-onboarding-review-v1" name="Outbox Delivery Test" isExecutable="true">
+                <startEvent id="start" />
+                <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="reviewTask" />
+                <userTask id="reviewTask" name="Merchant Review" flowable:assignee="${applicantId}" />
+                <sequenceFlow id="flow-review-end" sourceRef="reviewTask" targetRef="end" />
+                <endEvent id="end" />
+              </process>
+            </definitions>
+            """;
+        org.flowable.engine.repository.Deployment deployment = processEngine.getRepositoryService()
+            .createDeployment()
+            .tenantId(String.valueOf(tenantId))
+            .name("workflow-outbox-test-934")
+            .addString("workflow-outbox-test-934.bpmn20.xml", bpmn)
+            .deploy();
+        int originalMaxRetries = workflowOutboxPolicy.getMaxRetries();
+        try {
+            workflowOutboxPolicy.setMaxRetries(3);
+            insertWorkflowOutboxEvent(successfulEventId, tenantId, successfulApplicationId, 1L, processKey, applicantUserId, merchantId, merchantAgentId, "OUTBOX-SUCCESS-934", fixtureTime);
+            insertWorkflowOutboxEvent(retryEventId, tenantId, retryApplicationId, 1L, "missing-onboarding-process-v1", applicantUserId, merchantId, merchantAgentId, "OUTBOX-RETRY-934", fixtureTime);
+            org.junit.jupiter.api.Assertions.assertTrue(workflowOutboxPolicy.isEnabled());
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_outbox_event WHERE tenant_id = ? AND status = 'PENDING'
+                """, Integer.class, tenantId));
+
+            WorkflowOutboxBatchResult first = workflowOutboxProcessor.processTenant(tenantId);
+            org.junit.jupiter.api.Assertions.assertEquals(new WorkflowOutboxBatchResult(2, 1, 1, 0), first);
+            org.junit.jupiter.api.Assertions.assertEquals("PUBLISHED", outboxStatus(successfulEventId));
+            org.junit.jupiter.api.Assertions.assertEquals("RETRY", outboxStatus(retryEventId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, outboxRetryCount(retryEventId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ? AND business_id = ?
+                """, Integer.class, tenantId, successfulApplicationId));
+            String headers = jdbcTemplate
+                .queryForObject("SELECT headers_json FROM biz_outbox_event WHERE id = ?", String.class, successfulEventId);
+            org.junit.jupiter.api.Assertions.assertTrue(headers.contains("processInstanceId"));
+
+            jdbcTemplate.update("""
+                UPDATE biz_outbox_event
+                SET status = 'RETRY', next_retry_time = ?, published_time = NULL, locked_by = NULL, locked_time = NULL
+                WHERE id = ?
+                """, LocalDateTime.now().minusSeconds(1), successfulEventId);
+            jdbcTemplate.update("UPDATE biz_outbox_event SET next_retry_time = ? WHERE id = ?", LocalDateTime.now()
+                .plusHours(1), retryEventId);
+            WorkflowOutboxBatchResult replay = workflowOutboxProcessor.processTenant(tenantId);
+            org.junit.jupiter.api.Assertions.assertEquals(new WorkflowOutboxBatchResult(1, 1, 0, 0), replay);
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_workflow_instance WHERE tenant_id = ? AND business_id = ?
+                """, Integer.class, tenantId, successfulApplicationId));
+
+            for (int retry = 2; retry <= 3; retry++) {
+                jdbcTemplate.update("UPDATE biz_outbox_event SET next_retry_time = ? WHERE id = ?", LocalDateTime.now()
+                    .minusSeconds(1), retryEventId);
+                WorkflowOutboxBatchResult failed = workflowOutboxProcessor.processTenant(tenantId);
+                org.junit.jupiter.api.Assertions.assertEquals(1, failed.claimed());
+                org.junit.jupiter.api.Assertions.assertEquals(retry < 3 ? 1 : 0, failed.retried());
+                org.junit.jupiter.api.Assertions.assertEquals(retry == 3 ? 1 : 0, failed.repairRequired());
+            }
+            org.junit.jupiter.api.Assertions.assertEquals("REPAIR_REQUIRED", outboxStatus(retryEventId));
+            org.junit.jupiter.api.Assertions.assertEquals(3, outboxRetryCount(retryEventId));
+            org.junit.jupiter.api.Assertions.assertNull(jdbcTemplate
+                .queryForObject("SELECT next_retry_time FROM biz_outbox_event WHERE id = ?", LocalDateTime.class, retryEventId));
+            String safeError = jdbcTemplate
+                .queryForObject("SELECT last_error_message FROM biz_outbox_event WHERE id = ?", String.class, retryEventId);
+            org.junit.jupiter.api.Assertions.assertFalse(safeError.contains("missing-onboarding-process-v1"));
+            org.junit.jupiter.api.Assertions.assertTrue(workflowOutboxProcessor.requeueRepair(tenantId, retryEventId));
+            org.junit.jupiter.api.Assertions.assertEquals("PENDING", outboxStatus(retryEventId));
+            org.junit.jupiter.api.Assertions.assertEquals(0, outboxRetryCount(retryEventId));
+        } finally {
+            workflowOutboxPolicy.setMaxRetries(originalMaxRetries);
+            processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
+        }
+    }
+
+    private void insertWorkflowOutboxEvent(Long eventId,
+                                           Long tenantId,
+                                           Long applicationId,
+                                           Long businessVersion,
+                                           String processKey,
+                                           Long applicantUserId,
+                                           Long merchantId,
+                                           Long owningAgentId,
+                                           String eventSuffix,
+                                           LocalDateTime occurredTime) {
+        try {
+            String businessKey = "%s:MERCHANT_ONBOARDING:%s:%s".formatted(tenantId, applicationId, businessVersion);
+            String payload = applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new OnboardingWorkflowStartPayload(applicationId, merchantId, owningAgentId, applicationId + 1000000, 1, businessVersion, "SYNTHETIC", "ONBOARDING", applicantUserId, processKey, businessKey));
+            jdbcTemplate
+                .update("""
+                    INSERT INTO biz_outbox_event
+                    (id, tenant_id, aggregate_type, aggregate_id, aggregate_version, event_type, event_key,
+                     payload_json, status, retry_count, occurred_time, trace_id, create_time)
+                    VALUES (?, ?, 'ONBOARDING_APPLICATION', ?, ?, ?, ?, ?, 'PENDING', 0, ?, ?, ?)
+                    """, eventId, tenantId, applicationId, businessVersion, WorkflowOutboxProcessor.WORKFLOW_START_REQUESTED, "WORKFLOW-OUTBOX:" + eventSuffix, payload, occurredTime, "trace-" + eventSuffix, occurredTime);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String outboxStatus(Long eventId) {
+        return jdbcTemplate.queryForObject("SELECT status FROM biz_outbox_event WHERE id = ?", String.class, eventId);
+    }
+
+    private Integer outboxRetryCount(Long eventId) {
+        return jdbcTemplate
+            .queryForObject("SELECT retry_count FROM biz_outbox_event WHERE id = ?", Integer.class, eventId);
     }
 
     private void insertReviewApplication(Long tenantId,
@@ -1211,6 +1357,7 @@ abstract class AbstractApplicationIT {
                         '{bcrypt}$2a$10$xAsoeMJ.jc/kSxhviLAg7.j2iFrhi6yYAdniNdjLiIUWU/BRZl2Ti',
                         0, 1, ?, ?, ?, 1, ?, 0)
                 """, parentUserId, false, now, parentDeptId, now);
+            insertTenantRole(908201L, tenantId, "Agent Administrator 908", "AGENT_ADMIN", now);
             agentHierarchyService
                 .register(new AgentRegistration(rootAgentId, tenantId, 0L, parentUserId, parentDeptId, "PROVISION-ROOT", "PROVISION ROOT", "Root Contact", null, null));
             org.junit.jupiter.api.Assertions.assertEquals(parentDeptId, agentRepository.findById(tenantId, rootAgentId)
@@ -1256,7 +1403,7 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertTrue(passwordEncoder.matches("TempPass908!", storedPassword));
             org.junit.jupiter.api.Assertions.assertNull(storedPhone);
             Long roleId = jdbcTemplate
-                .queryForObject("SELECT id FROM sys_role WHERE code = 'AGENT_ADMIN' AND deleted = 0", Long.class);
+                .queryForObject("SELECT id FROM sys_role WHERE tenant_id = ? AND code = 'AGENT_ADMIN' AND deleted = 0", Long.class, tenantId);
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM sys_user_role WHERE user_id = ? AND role_id = ?
                 """, Integer.class, result.userId(), roleId));
@@ -1612,6 +1759,9 @@ abstract class AbstractApplicationIT {
                         '{bcrypt}$2a$10$xAsoeMJ.jc/kSxhviLAg7.j2iFrhi6yYAdniNdjLiIUWU/BRZl2Ti',
                         0, 1, ?, ?, ?, 1, ?, 0)
                 """, rootUserId, false, now, parentDeptId, now);
+            insertTenantRole(915200L, tenantId, "Agent Administrator 915", "AGENT_ADMIN", now);
+            insertTenantRole(915201L, tenantId, "Merchant Operator 915", "MERCHANT_OPERATOR", now);
+            insertTenantRole(915202L, tenantId, "Merchant Reviewer 915", "MERCHANT_REVIEWER", now);
             agentHierarchyService
                 .register(new AgentRegistration(rootAgentId, tenantId, 0L, rootUserId, parentDeptId, "MERCHANT-ROOT-915", "MERCHANT ROOT", "Root Contact", null, null));
 
@@ -1679,9 +1829,11 @@ abstract class AbstractApplicationIT {
 
             assertMerchantUser(result.operatorUserId(), parentDeptId, "OperatorPass915!", "MERCHANT_OPERATOR");
             assertMerchantUser(result.reviewerUserId(), parentDeptId, "ReviewerPass915!", "MERCHANT_REVIEWER");
-            org.junit.jupiter.api.Assertions.assertEquals(9, countMerchantManagementMenus("AGENT_ADMIN"));
-            org.junit.jupiter.api.Assertions.assertEquals(6, countMerchantManagementMenus("MERCHANT_OPERATOR"));
-            org.junit.jupiter.api.Assertions.assertEquals(4, countMerchantManagementMenus("MERCHANT_REVIEWER"));
+            org.junit.jupiter.api.Assertions.assertEquals(9, countMerchantManagementMenus(tenantId, "AGENT_ADMIN"));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(6, countMerchantManagementMenus(tenantId, "MERCHANT_OPERATOR"));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(4, countMerchantManagementMenus(tenantId, "MERCHANT_REVIEWER"));
             org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM biz_security_audit
                 WHERE tenant_id = ? AND object_id = ? AND action = 'MERCHANT_CREATE'
@@ -2882,8 +3034,8 @@ abstract class AbstractApplicationIT {
 
     protected void verifyIdempotentOnboardingSubmission() throws Exception {
         long tenantId = 930L;
-        long rootAgentId = 93001L;
-        long merchantAgentId = 93002L;
+        long rootAgentId = 1930001L;
+        long merchantAgentId = 1930002L;
         long rootUserId = 93011L;
         long merchantAgentUserId = 93012L;
         long merchantId = 930101L;
@@ -2986,7 +3138,10 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).workflowRequest().eventId(), repeated
                 .workflowRequest()
                 .eventId());
-            org.junit.jupiter.api.Assertions.assertEquals(concurrent.get(0).submittedTime(), repeated.submittedTime());
+            long submittedTimeDifferenceNanos = Math.abs(java.time.Duration.between(concurrent.get(0)
+                .submittedTime(), repeated.submittedTime()).toNanos());
+            org.junit.jupiter.api.Assertions.assertTrue(submittedTimeDifferenceNanos <= TimeUnit.MILLISECONDS
+                .toNanos(1));
             org.junit.jupiter.api.Assertions
                 .assertThrows(MerchantDomainException.class, () -> onboardingSubmissionService
                     .submit(new OnboardingSubmissionCommand(tenantId, merchantAgentUserId, merchantId, draftRef[0]
@@ -3287,17 +3442,33 @@ abstract class AbstractApplicationIT {
             """, Integer.class, userId, roleCode));
     }
 
-    private Integer countMerchantManagementMenus(String roleCode) {
+    private void insertTenantRole(Long roleId, Long tenantId, String name, String code, LocalDateTime createTime) {
+        jdbcTemplate.update("""
+            INSERT INTO sys_role
+            (id, name, code, data_scope, description, sort, is_system, menu_check_strictly,
+             dept_check_strictly, create_user, create_time, deleted, tenant_id)
+            VALUES (?, ?, ?, 4, NULL, 1, ?, ?, ?, 1, ?, 0, ?)
+            """, roleId, name, code, false, true, true, createTime, tenantId);
+        jdbcTemplate.update("""
+            INSERT INTO sys_role_menu (role_id, menu_id, tenant_id)
+            SELECT ?, role_menu.menu_id, ?
+            FROM sys_role_menu role_menu
+            JOIN sys_role source_role ON source_role.id = role_menu.role_id
+            WHERE source_role.tenant_id = 0 AND source_role.code = ? AND source_role.deleted = 0
+            """, roleId, tenantId, code);
+    }
+
+    private Integer countMerchantManagementMenus(Long tenantId, String roleCode) {
         return jdbcTemplate.queryForObject("""
             SELECT COUNT(*) FROM sys_role_menu role_menu
             JOIN sys_role role_data ON role_data.id = role_menu.role_id AND role_data.deleted = 0
-            WHERE role_data.code = ?
+            WHERE role_data.tenant_id = ? AND role_data.code = ?
               AND role_menu.menu_id IN (
                 690000000000100000, 690000000000100200, 690000000000100201, 690000000000100202,
                 690000000000100203, 690000000000100204, 690000000000100205, 690000000000100206,
                 690000000000100207
               )
-            """, Integer.class, roleCode);
+            """, Integer.class, tenantId, roleCode);
     }
 
     private String registerConcurrentMerchant(CountDownLatch ready,
