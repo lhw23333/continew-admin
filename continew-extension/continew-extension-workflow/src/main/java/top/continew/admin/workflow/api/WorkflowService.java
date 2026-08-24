@@ -43,6 +43,8 @@ public interface WorkflowService {
 
     WorkflowTask task(Long tenantId, Long userId, String taskId);
 
+    WorkflowTask taskView(Long tenantId, Long userId, String taskId);
+
     WorkflowPage<WorkflowTask> pageTodo(WorkflowTaskQuery query);
 
     WorkflowPage<WorkflowTask> pageDone(WorkflowDoneQuery query);

@@ -17,6 +17,7 @@
 package top.continew.admin.merchant.review.application;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** Persistence port for onboarding domain review state and immutable records. */
@@ -33,4 +34,6 @@ public interface OnboardingReviewRepository {
                                     LocalDateTime updateTime);
 
     void insert(ReviewRecordDraft draft);
+
+    List<ReviewRecordEvidence> listEvidence(Long tenantId, String processInstanceId);
 }

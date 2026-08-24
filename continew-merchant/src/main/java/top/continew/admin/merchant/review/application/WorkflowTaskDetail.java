@@ -16,9 +16,15 @@
 
 package top.continew.admin.merchant.review.application;
 
-/** Current domain state needed to validate a workflow review action. */
-public record OnboardingReviewContext(Long applicationId, String applicationNo, Long merchantId, Long owningAgentId,
-                                      String channelCode, String productCode, Long submittedBy,
-                                      String applicationStatus, Long kycVersionId, Long rowVersion,
-                                      Long merchantOperatorUserId) {
+import top.continew.admin.merchant.onboarding.application.OnboardingSupplementDiff;
+import top.continew.admin.workflow.dto.WorkflowTask;
+
+import java.util.List;
+
+/** Full authorized task-center detail without raw process variables or KYC plaintext. */
+public record WorkflowTaskDetail(WorkflowTask task, WorkflowTaskBusinessSummary business,
+                                 OnboardingSupplementDiff supplementDiff, List<WorkflowReviewHistoryItem> reviews) {
+    public WorkflowTaskDetail {
+        reviews = List.copyOf(reviews);
+    }
 }

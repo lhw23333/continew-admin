@@ -16,9 +16,14 @@
 
 package top.continew.admin.merchant.review.application;
 
-/** Current domain state needed to validate a workflow review action. */
-public record OnboardingReviewContext(Long applicationId, String applicationNo, Long merchantId, Long owningAgentId,
-                                      String channelCode, String productCode, Long submittedBy,
-                                      String applicationStatus, Long kycVersionId, Long rowVersion,
-                                      Long merchantOperatorUserId) {
+import java.time.LocalDateTime;
+import java.util.List;
+
+/** Sanitized immutable domain review evidence for task detail. */
+public record WorkflowReviewHistoryItem(Long id, String reviewType, String reviewerId, String action, String opinion,
+                                        List<String> issueCodes, String modelVersion, String evidenceSummary,
+                                        LocalDateTime decisionTime) {
+    public WorkflowReviewHistoryItem {
+        issueCodes = List.copyOf(issueCodes);
+    }
 }

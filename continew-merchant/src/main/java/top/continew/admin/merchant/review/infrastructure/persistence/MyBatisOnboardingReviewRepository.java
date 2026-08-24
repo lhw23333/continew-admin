@@ -25,8 +25,10 @@ import top.continew.admin.merchant.onboarding.infrastructure.persistence.Onboard
 import top.continew.admin.merchant.review.application.OnboardingReviewContext;
 import top.continew.admin.merchant.review.application.OnboardingReviewRepository;
 import top.continew.admin.merchant.review.application.ReviewRecordDraft;
+import top.continew.admin.merchant.review.application.ReviewRecordEvidence;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /** MyBatis persistence for application review state and immutable human review evidence. */
@@ -59,9 +61,10 @@ public class MyBatisOnboardingReviewRepository implements OnboardingReviewReposi
         if (merchant == null) {
             return Optional.empty();
         }
-        return Optional.of(new OnboardingReviewContext(application.getId(), application.getMerchantId(), application
-            .getOwningAgentId(), application.getSubmittedBy(), application.getStatus(), application
-                .getKycVersionId(), application.getRowVersion(), merchant.operatorUserId()));
+        return Optional.of(new OnboardingReviewContext(application.getId(), application.getApplicationNo(), application
+            .getMerchantId(), application.getOwningAgentId(), application.getChannelCode(), application
+                .getProductCode(), application.getSubmittedBy(), application.getStatus(), application
+                    .getKycVersionId(), application.getRowVersion(), merchant.operatorUserId()));
     }
 
     @Override
@@ -107,5 +110,19 @@ public class MyBatisOnboardingReviewRepository implements OnboardingReviewReposi
         if (reviewRecordMapper.insert(row) != 1) {
             throw new MerchantDomainException("Review record persistence failed");
         }
+    }
+
+    @Override
+    public List<ReviewRecordEvidence> listEvidence(Long tenantId, String processInstanceId) {
+        return reviewRecordMapper.lambdaQuery()
+            .eq(ReviewRecordDO::getTenantId, tenantId)
+            .eq(ReviewRecordDO::getProcessInstanceId, processInstanceId)
+            .orderByAsc(ReviewRecordDO::getDecisionTime, ReviewRecordDO::getId)
+            .list()
+            .stream()
+            .map(row -> new ReviewRecordEvidence(row.getId(), row.getReviewType(), row.getReviewerId(), row
+                .getAction(), row.getOpinion(), row.getIssueCodesJson(), row.getModelVersion(), row
+                    .getEvidenceSummary(), row.getDecisionTime()))
+            .toList();
     }
 }

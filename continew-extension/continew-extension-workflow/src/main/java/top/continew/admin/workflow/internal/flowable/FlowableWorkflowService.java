@@ -210,6 +210,26 @@ public class FlowableWorkflowService implements WorkflowService {
     }
 
     @Override
+    public WorkflowTask taskView(Long tenantId, Long userId, String taskId) {
+        WorkflowActor actor = authorizationPort.requireActor(tenantId, userId);
+        String id = required(taskId, ENGINE_ID);
+        Task active = taskService.createTaskQuery().taskId(id).singleResult();
+        if (active != null) {
+            if (!tenant(actor.tenantId()).equals(active.getTenantId())) {
+                throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
+            }
+            requireTaskAccess(actor, active);
+            return taskViews(List.of(active)).get(0);
+        }
+        HistoricTaskInstance historic = historyService.createHistoricTaskInstanceQuery().taskId(id).singleResult();
+        if (historic == null || !tenant(actor.tenantId()).equals(historic.getTenantId())) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
+        }
+        requireProcessAccess(actor, historic.getProcessInstanceId());
+        return historicTaskViews(List.of(historic)).get(0);
+    }
+
+    @Override
     public WorkflowPage<WorkflowTask> pageTodo(WorkflowTaskQuery request) {
         WorkflowActor actor = authorizationPort.requireActor(request.tenantId(), request.userId());
         QueryContext context = queryContext(actor, request.page(), request.size());

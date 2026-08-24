@@ -114,6 +114,9 @@ import top.continew.admin.merchant.review.application.OnboardingReviewCommand;
 import top.continew.admin.merchant.review.application.OnboardingReviewResult;
 import top.continew.admin.merchant.review.application.OnboardingReviewService;
 import top.continew.admin.merchant.review.application.OnboardingTransferCommand;
+import top.continew.admin.merchant.review.application.WorkflowTaskCenterService;
+import top.continew.admin.merchant.review.application.WorkflowTaskDetail;
+import top.continew.admin.merchant.review.application.WorkflowTaskView;
 import top.continew.admin.merchant.kyc.attachment.KycAttachment;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentDraft;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
@@ -306,6 +309,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingReviewService onboardingReviewService;
+
+    @Autowired
+    private WorkflowTaskCenterService workflowTaskCenterService;
 
     @Autowired
     private WorkflowOutboxProcessor workflowOutboxProcessor;
@@ -921,6 +927,19 @@ abstract class AbstractApplicationIT {
                         .businessKey(), null, false, 1, 20))
                     .items()
                     .get(0);
+                WorkflowPage<WorkflowTaskView> taskCenterTodo = workflowTaskCenterService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, riskUserId, processKey, approveFlow
+                        .businessKey(), null, false, 1, 20));
+                org.junit.jupiter.api.Assertions.assertEquals(1, taskCenterTodo.total());
+                org.junit.jupiter.api.Assertions.assertEquals("APP-REVIEW-" + applicationApproveId, taskCenterTodo
+                    .items()
+                    .get(0)
+                    .business()
+                    .applicationNo());
+                org.junit.jupiter.api.Assertions.assertEquals("913***********0Y92", taskCenterTodo.items()
+                    .get(0)
+                    .business()
+                    .legalIdentifierMasked());
                 workflowService.claim(new ClaimTaskCommand(tenantId, initialReviewTask.taskId(), riskUserId));
                 OnboardingReviewResult transferred = onboardingReviewService
                     .transfer(new OnboardingTransferCommand(tenantId, riskUserId, initialReviewTask
@@ -959,6 +978,12 @@ abstract class AbstractApplicationIT {
                     .diff(tenantId, applicantUserId, merchantId, applicationApproveId, supplementKycVersionId)
                     .changedFields()
                     .contains("LEGAL_NAME"));
+                WorkflowTaskDetail supplementDetail = workflowTaskCenterService
+                    .detail(tenantId, applicantUserId, supplementTask.taskId());
+                org.junit.jupiter.api.Assertions.assertNotNull(supplementDetail.supplementDiff());
+                org.junit.jupiter.api.Assertions.assertTrue(supplementDetail.supplementDiff()
+                    .changedFields()
+                    .contains("LEGAL_NAME"));
                 onboardingReviewService.review(new OnboardingReviewCommand(tenantId, applicantUserId, supplementTask
                     .taskId(), 1L, OnboardingReviewAction.RESUBMIT, "Supplemented requested evidence", List
                         .of(), "127.0.0.1"));
@@ -974,6 +999,10 @@ abstract class AbstractApplicationIT {
                     .review(new OnboardingReviewCommand(tenantId, reviewerUserId, returnedReviewTask
                         .taskId(), 1L, OnboardingReviewAction.APPROVE, "Review passed", List.of(), "127.0.0.1"));
                 org.junit.jupiter.api.Assertions.assertEquals("APPROVED", approved.applicationStatus());
+                WorkflowTaskDetail completedDetail = workflowTaskCenterService
+                    .detail(tenantId, reviewerUserId, returnedReviewTask.taskId());
+                org.junit.jupiter.api.Assertions.assertEquals(WorkflowTask.State.DONE, completedDetail.task().state());
+                org.junit.jupiter.api.Assertions.assertEquals(4, completedDetail.reviews().size());
                 Set<String> approvedActivities = processEngine.getHistoryService()
                     .createHistoricActivityInstanceQuery()
                     .processInstanceId(approveFlow.processInstanceId())

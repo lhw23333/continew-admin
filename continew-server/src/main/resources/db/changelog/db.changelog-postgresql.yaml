@@ -34,6 +34,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/onboarding-menu-permission.sql
   - include:
+      file: db/changelog/postgresql/merchant/workflow-task-center-menu.sql
+  - include:
       file: db/changelog/postgresql/merchant/merchant-reverification.sql
   - include:
       file: db/changelog/postgresql/merchant/sensitive-key-versions.sql
