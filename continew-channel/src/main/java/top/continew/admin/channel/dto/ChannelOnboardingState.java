@@ -16,13 +16,13 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
+/** Independent normalized channel onboarding sub-states. */
+public record ChannelOnboardingState(ChannelStageStatus reportingStatus, ChannelStageStatus signingStatus,
+                                     ChannelStageStatus cardBindingStatus, ChannelStageStatus reserveAccountStatus,
+                                     ChannelStageStatus finalStatus) {
+    public ChannelOnboardingState {
+        if (reportingStatus == null || signingStatus == null || cardBindingStatus == null || reserveAccountStatus == null || finalStatus == null) {
+            throw ChannelContracts.invalid("channel onboarding state");
+        }
     }
 }

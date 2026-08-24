@@ -16,13 +16,4 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
-    }
-}
+public enum ChannelSigningAction { SIGN_AGREEMENT, BIND_CARD, OPEN_RESERVE_ACCOUNT }

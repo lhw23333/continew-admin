@@ -16,13 +16,10 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
+public record ChannelLimitAdjustmentQuery(ChannelCommandContext context, Long requestId) {
+    public ChannelLimitAdjustmentQuery {
+        if (context == null || context.businessType() != ChannelBusinessType.LIMIT_ADJUSTMENT)
+            throw ChannelContracts.invalid("limit query context");
+        requestId = ChannelContracts.positive(requestId, "requestId");
     }
 }

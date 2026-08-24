@@ -16,13 +16,9 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
+public record ChannelStatusQuery(ChannelCommandContext context) {
+    public ChannelStatusQuery {
+        if (context == null || context.businessType() != ChannelBusinessType.ONBOARDING)
+            throw ChannelContracts.invalid("status query context");
     }
 }

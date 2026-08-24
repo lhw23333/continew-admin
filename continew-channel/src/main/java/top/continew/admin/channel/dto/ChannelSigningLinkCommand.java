@@ -16,13 +16,13 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
+import java.time.LocalDateTime;
+
+public record ChannelSigningLinkCommand(ChannelCommandContext context, ChannelSigningAction action,
+                                        LocalDateTime expiresAt) {
+    public ChannelSigningLinkCommand {
+        if (context == null || context
+            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
+            throw ChannelContracts.invalid("signing link command");
     }
 }

@@ -26,8 +26,14 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 class ChannelArchitectureTest {
 
     @ArchTest
-    static final ArchRule CHANNEL_MUST_NOT_IMPORT_FLOWABLE = noClasses()
-        .should()
+    static final ArchRule CHANNEL_MUST_NOT_IMPORT_FLOWABLE = noClasses().should()
         .dependOnClassesThat()
         .resideInAnyPackage("org.flowable..", "top.continew.admin.workflow.internal..");
+
+    @ArchTest
+    static final ArchRule CHANNEL_CONTRACT_MUST_NOT_IMPORT_BUSINESS_IMPLEMENTATIONS = noClasses().that()
+        .resideInAnyPackage("top.continew.admin.channel.api..", "top.continew.admin.channel.dto..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("top.continew.admin.merchant..", "top.continew.admin.system..", "org.flowable..");
 }

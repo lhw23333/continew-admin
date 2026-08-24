@@ -16,13 +16,6 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
-    }
+public enum ChannelEventType {
+    SUBMISSION_ACCEPTED, STATUS_CHANGED, SIGNING_COMPLETED, ACCOUNT_UPDATED, LIMIT_CHANGED
 }

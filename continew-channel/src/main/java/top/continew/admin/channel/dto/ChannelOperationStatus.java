@@ -16,13 +16,7 @@
 
 package top.continew.admin.channel.dto;
 
-/**
- * Stable non-secret channel identifier.
- *
- * @param channelCode configured channel code
- */
-public record ChannelRef(String channelCode) {
-    public ChannelRef {
-        channelCode = ChannelContracts.code(channelCode, "channelCode");
-    }
+/** Normalized outcome of a single channel operation, distinct from domain lifecycle state. */
+public enum ChannelOperationStatus {
+    ACCEPTED, PROCESSING, SUCCEEDED, FAILED, REJECTED, UNCERTAIN
 }
