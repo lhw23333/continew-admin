@@ -135,6 +135,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelConnectionConfigurationIsVersionedImmutableAndSecretSafe() {
+        verifyChannelConnectionConfiguration();
+    }
+
+    @Test
     void onboardingDraftsAreExplicitRecoverableAndOptimisticallyVersioned() {
         verifyOnboardingDraftPersistence();
     }

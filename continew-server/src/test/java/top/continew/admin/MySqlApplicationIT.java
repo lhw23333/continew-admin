@@ -129,6 +129,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelConnectionConfigurationIsVersionedImmutableAndSecretSafe() {
+        verifyChannelConnectionConfiguration();
+    }
+
+    @Test
     void onboardingDraftsAreExplicitRecoverableAndOptimisticallyVersioned() {
         verifyOnboardingDraftPersistence();
     }

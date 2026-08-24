@@ -28,6 +28,18 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
+import top.continew.admin.channel.service.ChannelConfigurationLoader;
+import top.continew.admin.channel.dto.ChannelConnectionStatus;
+import top.continew.admin.channel.dto.ChannelEndpointConfiguration;
+import top.continew.admin.channel.dto.ChannelMappedStatus;
+import top.continew.admin.channel.dto.ChannelOnboardingState;
+import top.continew.admin.channel.dto.ChannelOperation;
+import top.continew.admin.channel.dto.ChannelOperationStatus;
+import top.continew.admin.channel.dto.ChannelProductKey;
+import top.continew.admin.channel.dto.ChannelStageStatus;
+import top.continew.admin.channel.dto.ChannelStatusMapping;
+import top.continew.admin.channel.dto.ChannelTimeoutPolicy;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultCreateCommand;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultService;
@@ -173,6 +185,8 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Duration;
+import java.util.EnumMap;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -278,6 +292,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelEligibilityService channelEligibilityService;
+
+    @Autowired
+    private ChannelConnectionConfigCatalog channelConnectionConfigCatalog;
+
+    @Autowired
+    private ChannelConfigurationLoader channelConfigurationLoader;
 
     @Autowired
     private OnboardingDraftService onboardingDraftService;
@@ -2384,6 +2404,84 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> channelEligibilityService
                 .list(tenantId, merchantAgentUserId, merchantId));
         });
+    }
+
+    protected void verifyChannelConnectionConfiguration() {
+        long tenantId = 941L;
+        ChannelProductKey product = new ChannelProductKey("SYNTHETIC", "ONBOARDING");
+        LocalDateTime baseTime = LocalDateTime.of(2026, 8, 24, 8, 0);
+        EnumMap<ChannelOperation, String> paths = new EnumMap<>(ChannelOperation.class);
+        EnumMap<ChannelOperation, Duration> operationTimeouts = new EnumMap<>(ChannelOperation.class);
+        for (ChannelOperation operation : ChannelOperation.values()) {
+            paths.put(operation, "/api/" + operation.name().toLowerCase(java.util.Locale.ROOT));
+            operationTimeouts.put(operation, Duration.ofSeconds(5));
+        }
+        ChannelEndpointConfiguration endpoints = new ChannelEndpointConfiguration("https://synthetic.invalid", paths);
+        ChannelTimeoutPolicy timeouts = new ChannelTimeoutPolicy(Duration.ofSeconds(1), Duration
+            .ofSeconds(5), operationTimeouts);
+        ChannelOnboardingState processing = new ChannelOnboardingState(ChannelStageStatus.PROCESSING, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.PROCESSING);
+        ChannelStatusMapping mapping = new ChannelStatusMapping(Map
+            .of("PROCESSING", new ChannelMappedStatus(ChannelOperationStatus.PROCESSING, processing, null, 10, false)));
+        com.fasterxml.jackson.databind.ObjectMapper objectMapper = applicationContext
+            .getBean(com.fasterxml.jackson.databind.ObjectMapper.class);
+        try {
+            insertChannelConnectionVersion(941601L, tenantId, product, "CFG-1", objectMapper
+                .writeValueAsString(endpoints), objectMapper.writeValueAsString(timeouts), "MAP-1", objectMapper
+                    .writeValueAsString(mapping), "ENABLED", baseTime);
+            insertChannelConnectionVersion(941602L, tenantId, product, "CFG-2", objectMapper
+                .writeValueAsString(endpoints), objectMapper.writeValueAsString(timeouts), "MAP-2", objectMapper
+                    .writeValueAsString(mapping), "DISABLED", baseTime.plusHours(1));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+
+        TenantUtils.execute(tenantId, () -> {
+            var exact = channelConnectionConfigCatalog.findVersion(tenantId, product, "CFG-1").orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelConnectionStatus.ENABLED, exact.status());
+            org.junit.jupiter.api.Assertions.assertEquals("CFG-1", channelConnectionConfigCatalog
+                .findEffective(tenantId, product, baseTime.plusHours(2))
+                .orElseThrow()
+                .configVersion());
+            try (var loaded = channelConfigurationLoader.load(tenantId, product, "CFG-1", baseTime.plusMinutes(1))) {
+                org.junit.jupiter.api.Assertions.assertEquals(32, loaded.signingSecret().copyMaterial().length);
+                org.junit.jupiter.api.Assertions.assertEquals(32, loaded.encryptionSecret().copyMaterial().length);
+                org.junit.jupiter.api.Assertions.assertEquals(32, loaded.callbackVerificationSecret()
+                    .copyMaterial().length);
+                org.junit.jupiter.api.Assertions.assertFalse(loaded.toString().contains("env://"));
+            }
+            org.junit.jupiter.api.Assertions.assertEquals("env://channel.test.signing-key", jdbcTemplate
+                .queryForObject("""
+                    SELECT signing_key_ref FROM biz_channel_connection_version WHERE tenant_id = ? AND id = ?
+                    """, String.class, tenantId, 941601L));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_channel_connection_version SET status = 'DISABLED' WHERE tenant_id = ? AND id = ?
+                """, tenantId, 941601L));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_channel_connection_version WHERE tenant_id = ? AND id = ?
+                """, tenantId, 941601L));
+        });
+    }
+
+    private void insertChannelConnectionVersion(Long id,
+                                                Long tenantId,
+                                                ChannelProductKey product,
+                                                String configVersion,
+                                                String endpointJson,
+                                                String timeoutJson,
+                                                String statusMappingVersion,
+                                                String statusMappingJson,
+                                                String status,
+                                                LocalDateTime effectiveTime) {
+        jdbcTemplate.update("""
+            INSERT INTO biz_channel_connection_version
+            (id, tenant_id, channel_code, product_code, config_version, endpoint_json, timeout_json,
+             status_mapping_version, status_mapping_json, signing_key_ref, encryption_key_ref,
+             callback_verification_key_ref, status, effective_time, create_time, deleted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'env://channel.test.signing-key',
+                    'env://channel.test.encryption-key', 'env://channel.test.callback-key', ?, ?, ?, 0)
+            """, id, tenantId, product.channelCode(), product
+            .productCode(), configVersion, endpointJson, timeoutJson, statusMappingVersion, statusMappingJson, status, effectiveTime, effectiveTime
+                .minusMinutes(1));
     }
 
     protected void verifyOnboardingDraftPersistence() {
