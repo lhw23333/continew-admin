@@ -143,15 +143,20 @@ import top.continew.admin.workflow.internal.flowable.FlowableEnginePolicyPropert
 import top.continew.admin.workflow.internal.flowable.FlowableJobMonitor;
 import top.continew.admin.workflow.internal.flowable.FlowableJobSnapshot;
 import top.continew.admin.workflow.api.InvalidWorkflowVariableException;
+import top.continew.admin.workflow.api.WorkflowDeploymentService;
 import top.continew.admin.workflow.api.WorkflowOperationException;
 import top.continew.admin.workflow.api.WorkflowMappingService;
 import top.continew.admin.workflow.api.WorkflowService;
 import top.continew.admin.workflow.command.ClaimTaskCommand;
 import top.continew.admin.workflow.command.CompleteTaskCommand;
+import top.continew.admin.workflow.command.DeployWorkflowCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
+import top.continew.admin.workflow.dto.WorkflowDefinitionContract;
+import top.continew.admin.workflow.dto.WorkflowDeploymentRef;
 import top.continew.admin.workflow.dto.WorkflowPage;
 import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
+import top.continew.admin.workflow.dto.WorkflowNodeContract;
 import top.continew.admin.workflow.dto.WorkflowProcessHistory;
 import top.continew.admin.workflow.dto.WorkflowRef;
 import top.continew.admin.workflow.dto.WorkflowTask;
@@ -159,6 +164,7 @@ import top.continew.admin.workflow.query.WorkflowDoneQuery;
 import top.continew.admin.workflow.query.WorkflowTaskQuery;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -191,6 +197,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private WorkflowMappingService workflowMappingService;
+
+    @Autowired
+    private WorkflowDeploymentService workflowDeploymentService;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -362,6 +371,128 @@ abstract class AbstractApplicationIT {
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.suspended").gauge());
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.dead_letter").gauge());
         org.junit.jupiter.api.Assertions.assertNotNull(registry.find("flowable.jobs.history").gauge());
+    }
+
+    protected void verifyWorkflowDeploymentVersionPolicy() {
+        long tenantId = 938L;
+        long actorUserId = 93801L;
+        String tenant = String.valueOf(tenantId);
+        String processKey = "workflow-deployment-policy-test";
+        WorkflowDefinitionContract version1Contract = deploymentPolicyContract(processKey, 1);
+        WorkflowDefinitionContract version2Contract = deploymentPolicyContract(processKey, 2);
+        try {
+            WorkflowDeploymentRef version1 = workflowDeploymentService
+                .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment policy v1", processKey + ".bpmn20.xml", deploymentPolicyBpmn(processKey, "Version 1", "userTask", "reviewTask"), version1Contract));
+            org.junit.jupiter.api.Assertions.assertEquals(1, version1.processDefinitionVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(1, version1.contractVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(64, version1.resourceSha256().length());
+
+            org.flowable.engine.runtime.ProcessInstance inFlightVersion1 = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(processKey, "deployment-policy-v1", Map.of(), tenant);
+            org.junit.jupiter.api.Assertions.assertEquals(version1.processDefinitionId(), inFlightVersion1
+                .getProcessDefinitionId());
+
+            byte[] version2Resource = deploymentPolicyBpmn(processKey, "Version 2", "userTask", "reviewTask");
+            WorkflowDeploymentRef version2 = workflowDeploymentService
+                .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment policy v2", processKey + ".bpmn20.xml", version2Resource, version2Contract));
+            org.junit.jupiter.api.Assertions.assertEquals(2, version2.processDefinitionVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(2, version2.contractVersion());
+            org.junit.jupiter.api.Assertions.assertNotEquals(version1.processDefinitionId(), version2
+                .processDefinitionId());
+
+            org.flowable.engine.runtime.ProcessInstance newVersion2 = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(processKey, "deployment-policy-v2", Map.of(), tenant);
+            org.junit.jupiter.api.Assertions.assertEquals(version2.processDefinitionId(), newVersion2
+                .getProcessDefinitionId());
+            org.junit.jupiter.api.Assertions.assertEquals(version1.processDefinitionId(), processEngine
+                .getRuntimeService()
+                .createProcessInstanceQuery()
+                .processInstanceId(inFlightVersion1.getId())
+                .singleResult()
+                .getProcessDefinitionId());
+
+            WorkflowDeploymentRef duplicate = workflowDeploymentService
+                .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment policy v2 retry", processKey + ".bpmn20.xml", version2Resource, version2Contract));
+            org.junit.jupiter.api.Assertions.assertEquals(version2, duplicate);
+            assertDeploymentCounts(tenantId, processKey, 2L, 2);
+
+            WorkflowOperationException sameContractDifferentResource = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowDeploymentService
+                    .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment policy conflict", processKey + ".bpmn20.xml", deploymentPolicyBpmn(processKey, "Version 2 conflict", "userTask", "reviewTask"), version2Contract)));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(WorkflowOperationException.Code.DEPLOYMENT_CONFLICT, sameContractDifferentResource
+                    .code());
+            assertDeploymentCounts(tenantId, processKey, 2L, 2);
+
+            WorkflowOperationException missingStableNode = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowDeploymentService
+                    .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment missing node", processKey + ".bpmn20.xml", deploymentPolicyBpmn(processKey, "Missing stable node", "userTask", "replacementTask"), deploymentPolicyContract(processKey, 3))));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(WorkflowOperationException.Code.DEFINITION_CONTRACT_VIOLATION, missingStableNode.code());
+            assertDeploymentCounts(tenantId, processKey, 2L, 2);
+
+            WorkflowOperationException changedStableNodeType = org.junit.jupiter.api.Assertions
+                .assertThrows(WorkflowOperationException.class, () -> workflowDeploymentService
+                    .deploy(new DeployWorkflowCommand(tenantId, actorUserId, "Workflow deployment changed node type", processKey + ".bpmn20.xml", deploymentPolicyBpmn(processKey, "Changed stable node type", "manualTask", "reviewTask"), deploymentPolicyContract(processKey, 3))));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(WorkflowOperationException.Code.DEFINITION_CONTRACT_VIOLATION, changedStableNodeType
+                    .code());
+            assertDeploymentCounts(tenantId, processKey, 2L, 2);
+
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_workflow_deployment SET resource_name = ? WHERE tenant_id = ? AND id = ?
+                """, "tampered.bpmn20.xml", tenantId, version1.metadataId()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_workflow_deployment WHERE tenant_id = ? AND id = ?
+                """, tenantId, version1.metadataId()));
+            assertDeploymentCounts(tenantId, processKey, 2L, 2);
+        } finally {
+            Set<String> deploymentIds = processEngine.getRepositoryService()
+                .createProcessDefinitionQuery()
+                .processDefinitionKey(processKey)
+                .processDefinitionTenantId(tenant)
+                .list()
+                .stream()
+                .map(org.flowable.engine.repository.ProcessDefinition::getDeploymentId)
+                .collect(java.util.stream.Collectors.toSet());
+            deploymentIds.forEach(deploymentId -> processEngine.getRepositoryService()
+                .deleteDeployment(deploymentId, true));
+        }
+    }
+
+    private WorkflowDefinitionContract deploymentPolicyContract(String processKey, int contractVersion) {
+        return new WorkflowDefinitionContract(processKey, contractVersion, List
+            .of(new WorkflowNodeContract("start", WorkflowNodeContract.NodeType.START_EVENT), new WorkflowNodeContract("reviewTask", WorkflowNodeContract.NodeType.USER_TASK), new WorkflowNodeContract("end", WorkflowNodeContract.NodeType.END_EVENT)));
+    }
+
+    private byte[] deploymentPolicyBpmn(String processKey, String processName, String activityType, String activityId) {
+        return """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         targetNamespace="https://continew.top/workflow/test">
+              <process id="%s" name="%s" isExecutable="true">
+                <startEvent id="start"/>
+                <sequenceFlow id="toReview" sourceRef="start" targetRef="%s"/>
+                <%s id="%s" name="Review"/>
+                <sequenceFlow id="toEnd" sourceRef="%s" targetRef="end"/>
+                <endEvent id="end"/>
+              </process>
+            </definitions>
+            """.formatted(processKey, processName, activityId, activityType, activityId, activityId)
+            .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void assertDeploymentCounts(long tenantId, String processKey, long definitionCount, int metadataCount) {
+        org.junit.jupiter.api.Assertions.assertEquals(definitionCount, processEngine.getRepositoryService()
+            .createProcessDefinitionQuery()
+            .processDefinitionKey(processKey)
+            .processDefinitionTenantId(String.valueOf(tenantId))
+            .count());
+        org.junit.jupiter.api.Assertions.assertEquals(metadataCount, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM biz_workflow_deployment
+            WHERE tenant_id = ? AND process_definition_key = ?
+            """, Integer.class, tenantId, processKey));
     }
 
     protected void verifyWorkflowAdapterCommandsAndQueries() throws Exception {

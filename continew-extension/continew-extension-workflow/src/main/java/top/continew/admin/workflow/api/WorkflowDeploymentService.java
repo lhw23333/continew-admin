@@ -16,22 +16,10 @@
 
 package top.continew.admin.workflow.api;
 
-/** Sanitized workflow operation failure without Flowable exception messages or variable contents. */
-public final class WorkflowOperationException extends RuntimeException {
+import top.continew.admin.workflow.command.DeployWorkflowCommand;
+import top.continew.admin.workflow.dto.WorkflowDeploymentRef;
 
-    private final Code code;
-
-    public WorkflowOperationException(Code code) {
-        super("Workflow operation failed: " + code.name());
-        this.code = code;
-    }
-
-    public Code code() {
-        return code;
-    }
-
-    public enum Code {
-        INVALID_REQUEST, NOT_FOUND, TENANT_MISMATCH, NOT_ASSIGNED, ALREADY_CLAIMED, MAPPING_CONFLICT,
-        DEPLOYMENT_CONFLICT, DEFINITION_CONTRACT_VIOLATION, ENGINE_FAILURE
-    }
+/** Validates and idempotently deploys immutable BPMN resources. */
+public interface WorkflowDeploymentService {
+    WorkflowDeploymentRef deploy(DeployWorkflowCommand command);
 }
