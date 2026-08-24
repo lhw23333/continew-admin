@@ -106,7 +106,7 @@
 ## 9. Channel Onboarding Integration
 
 - [x] 9.1 Define channel adapter interfaces and normalized command/result/event models for submit, status query, signing link, account info, and limit adjustment
-- [ ] 9.2 Implement a synthetic/reference channel adapter used by automated tests before integrating any production channel
+- [x] 9.2 Implement a synthetic/reference channel adapter used by automated tests before integrating any production channel
 - [ ] 9.3 Implement versioned endpoint/product/timeout/status-map/key-reference configuration with secret-safe loading
 - [ ] 9.4 Implement outbound signing/encryption, timestamp/nonce, business serial, trace correlation, and sanitized transport audit
 - [ ] 9.5 Implement callback endpoint signature/certificate/timestamp/replay validation before event persistence

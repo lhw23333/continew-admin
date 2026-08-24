@@ -15,7 +15,8 @@ The contract covers:
 - limit-adjustment submission; and
 - limit-adjustment status query.
 
-Adapter lookup and the first synthetic/reference implementation remain task 9.2.
+The first implementation is the task 9.2 in-memory `SYNTHETIC` adapter. Adapter lookup and production configuration are
+introduced with later channel configuration/orchestration tasks.
 
 ## Command identity and idempotency
 
