@@ -364,6 +364,8 @@ cosid:
 flowable:
   # 生产和普通开发环境禁止自动修改表结构，统一由 Liquibase 管理
   database-schema-update: false
+  # 禁止 classpath 自动部署，所有 BPMN 必须通过项目部署端口完成合约和哈希校验
+  check-process-definitions: false
   # AUDIT 保留流程、任务、变量最终值和业务版本引用；避免 FULL 级别的无必要明细膨胀
   history-level: audit
   # 异步任务由 Flowable executor 持久化执行；一期历史记录仍同步写入

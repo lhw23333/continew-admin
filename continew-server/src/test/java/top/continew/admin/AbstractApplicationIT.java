@@ -152,6 +152,7 @@ import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.DeployWorkflowCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
+import top.continew.admin.workflow.definition.MerchantOnboardingReviewWorkflowDefinition;
 import top.continew.admin.workflow.dto.WorkflowDefinitionContract;
 import top.continew.admin.workflow.dto.WorkflowDeploymentRef;
 import top.continew.admin.workflow.dto.WorkflowPage;
@@ -200,6 +201,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private WorkflowDeploymentService workflowDeploymentService;
+
+    @Autowired
+    private MerchantOnboardingReviewWorkflowDefinition merchantOnboardingReviewWorkflowDefinition;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -495,6 +499,98 @@ abstract class AbstractApplicationIT {
             """, Integer.class, tenantId, processKey));
     }
 
+    protected void verifyMerchantOnboardingWorkflowDefinitionAndTimer() {
+        long tenantId = 939L;
+        long actorUserId = 93901L;
+        String tenant = String.valueOf(tenantId);
+        org.flowable.job.service.impl.asyncexecutor.AsyncExecutor asyncExecutor = ((org.flowable.engine.impl.cfg.ProcessEngineConfigurationImpl)processEngine
+            .getProcessEngineConfiguration()).getAsyncExecutor();
+        boolean restartAsyncExecutor = asyncExecutor.isActive();
+        if (restartAsyncExecutor) {
+            asyncExecutor.shutdown();
+        }
+        WorkflowDeploymentRef deployment = workflowDeploymentService.deploy(merchantOnboardingReviewWorkflowDefinition
+            .deploymentCommand(tenantId, actorUserId));
+        try {
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantOnboardingReviewWorkflowDefinition.PROCESS_KEY, deployment
+                    .processDefinitionKey());
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantOnboardingReviewWorkflowDefinition.CONTRACT_VERSION, deployment
+                    .contractVersion());
+
+            org.flowable.engine.runtime.ProcessInstance aiReviewInstance = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(MerchantOnboardingReviewWorkflowDefinition.PROCESS_KEY, "939:MERCHANT_ONBOARDING:939101:1", onboardingWorkflowVariables(tenantId, 939101L, 939201L, 1L, 939301L, 939401L, "HIGH"), tenant);
+            org.junit.jupiter.api.Assertions.assertNotNull(processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(aiReviewInstance.getId())
+                .taskDefinitionKey("reviewTask")
+                .singleResult());
+            org.junit.jupiter.api.Assertions.assertTrue(processEngine.getHistoryService()
+                .createHistoricActivityInstanceQuery()
+                .processInstanceId(aiReviewInstance.getId())
+                .activityId("aiReviewTask")
+                .finished()
+                .count() > 0);
+            org.junit.jupiter.api.Assertions.assertNull(processEngine.getRuntimeService()
+                .getVariable(aiReviewInstance.getId(), "aiDecision"));
+
+            org.flowable.engine.runtime.ProcessInstance skippedAiInstance = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(MerchantOnboardingReviewWorkflowDefinition.PROCESS_KEY, "939:MERCHANT_ONBOARDING:939102:1", onboardingWorkflowVariables(tenantId, 939102L, 939202L, 1L, 939302L, 939402L, "UNASSESSED"), tenant);
+            org.junit.jupiter.api.Assertions.assertEquals(0, processEngine.getHistoryService()
+                .createHistoricActivityInstanceQuery()
+                .processInstanceId(skippedAiInstance.getId())
+                .activityId("aiReviewTask")
+                .count());
+            org.flowable.job.api.Job reviewTimer = processEngine.getManagementService()
+                .createTimerJobQuery()
+                .processInstanceId(skippedAiInstance.getId())
+                .singleResult();
+            org.junit.jupiter.api.Assertions.assertNotNull(reviewTimer);
+            long dueHours = java.time.Duration.between(reviewTimer.getCreateTime().toInstant(), reviewTimer.getDuedate()
+                .toInstant()).toHours();
+            org.junit.jupiter.api.Assertions.assertTrue(dueHours >= 47 && dueHours <= 48);
+
+            org.flowable.job.api.Job executableTimer = processEngine.getManagementService()
+                .moveTimerToExecutableJob(reviewTimer.getId());
+            processEngine.getManagementService().executeJob(executableTimer.getId());
+            org.flowable.task.api.Task escalatedTask = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(skippedAiInstance.getId())
+                .singleResult();
+            org.junit.jupiter.api.Assertions.assertEquals("escalatedReviewTask", escalatedTask.getTaskDefinitionKey());
+            org.junit.jupiter.api.Assertions.assertEquals(1, processEngine.getTaskService()
+                .createTaskQuery()
+                .taskId(escalatedTask.getId())
+                .taskCandidateGroup("RISK_REVIEWER")
+                .count());
+            org.junit.jupiter.api.Assertions.assertEquals(0, processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(skippedAiInstance.getId())
+                .taskDefinitionKey("reviewTask")
+                .count());
+        } finally {
+            processEngine.getRepositoryService().deleteDeployment(deployment.deploymentId(), true);
+            if (restartAsyncExecutor) {
+                asyncExecutor.start();
+            }
+        }
+    }
+
+    private Map<String, Object> onboardingWorkflowVariables(Long tenantId,
+                                                            Long merchantId,
+                                                            Long applicationId,
+                                                            Long kycVersion,
+                                                            Long applicantId,
+                                                            Long owningAgentId,
+                                                            String riskLevel) {
+        return Map.ofEntries(Map.entry("tenantId", tenantId), Map.entry("merchantId", merchantId), Map
+            .entry("applicationId", applicationId), Map.entry("kycVersion", kycVersion), Map
+                .entry("channelCode", "SYNTHETIC"), Map.entry("applicantId", applicantId), Map
+                    .entry("owningAgentId", owningAgentId), Map.entry("riskLevel", riskLevel), Map
+                        .entry("requiresSupplement", Boolean.FALSE));
+    }
+
     protected void verifyWorkflowAdapterCommandsAndQueries() throws Exception {
         long tenantId = 931L;
         long reviewerUserId = 93111L;
@@ -775,7 +871,7 @@ abstract class AbstractApplicationIT {
         long applicationSelfReviewId = 932303L;
         long applicationConcurrentId = 932304L;
         long approveSourceKycVersionId = 1932301L;
-        String processKey = "workflow-review-action-test-v1";
+        String processKey = MerchantOnboardingReviewWorkflowDefinition.PROCESS_KEY;
         LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 22, 10, 0);
 
         TenantUtils.execute(tenantId, () -> {
@@ -815,35 +911,8 @@ abstract class AbstractApplicationIT {
                     .repeat(64), KycAttachmentScanStatus.CLEAN, KycAttachmentValidationStatus.VALID, 1, fixtureTime));
         });
 
-        String bpmn = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                         xmlns:flowable="http://flowable.org/bpmn"
-                         targetNamespace="https://continew.top/workflow/review-test">
-              <process id="workflow-review-action-test-v1" name="Workflow Review Action Test" isExecutable="true">
-                <startEvent id="start" />
-                <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="reviewTask" />
-                <userTask id="reviewTask" name="Merchant Review"
-                          flowable:candidateGroups="MERCHANT_REVIEWER,RISK_REVIEWER" />
-                <sequenceFlow id="flow-review-decision" sourceRef="reviewTask" targetRef="reviewDecision" />
-                <exclusiveGateway id="reviewDecision" default="flow-review-end" />
-                <sequenceFlow id="flow-review-supplement" sourceRef="reviewDecision" targetRef="supplementTask">
-                  <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'REQUEST_SUPPLEMENT'}]]></conditionExpression>
-                </sequenceFlow>
-                <sequenceFlow id="flow-review-end" sourceRef="reviewDecision" targetRef="end" />
-                <userTask id="supplementTask" name="Merchant Supplement" flowable:assignee="${applicantId}" />
-                <sequenceFlow id="flow-supplement-review" sourceRef="supplementTask" targetRef="reviewTask" />
-                <endEvent id="end" />
-              </process>
-            </definitions>
-            """;
-        org.flowable.engine.repository.Deployment deployment = processEngine.getRepositoryService()
-            .createDeployment()
-            .tenantId(String.valueOf(tenantId))
-            .name("workflow-review-action-test-932")
-            .addString("workflow-review-action-test-932.bpmn20.xml", bpmn)
-            .deploy();
+        WorkflowDeploymentRef deployment = workflowDeploymentService.deploy(merchantOnboardingReviewWorkflowDefinition
+            .deploymentCommand(tenantId, riskUserId));
         try {
             TenantUtils.execute(tenantId, () -> {
                 WorkflowRef approveFlow = startReviewWorkflow(tenantId, processKey, applicationApproveId, 1L, merchantId, merchantAgentId, applicantUserId);
@@ -905,6 +974,15 @@ abstract class AbstractApplicationIT {
                     .review(new OnboardingReviewCommand(tenantId, reviewerUserId, returnedReviewTask
                         .taskId(), 1L, OnboardingReviewAction.APPROVE, "Review passed", List.of(), "127.0.0.1"));
                 org.junit.jupiter.api.Assertions.assertEquals("APPROVED", approved.applicationStatus());
+                Set<String> approvedActivities = processEngine.getHistoryService()
+                    .createHistoricActivityInstanceQuery()
+                    .processInstanceId(approveFlow.processInstanceId())
+                    .list()
+                    .stream()
+                    .map(org.flowable.engine.history.HistoricActivityInstance::getActivityId)
+                    .collect(java.util.stream.Collectors.toSet());
+                org.junit.jupiter.api.Assertions.assertTrue(approvedActivities.containsAll(Set
+                    .of("aiReviewTask", "reviewTask", "supplementTask", "approvedEnd")));
 
                 WorkflowRef rejectFlow = startReviewWorkflow(tenantId, processKey, applicationRejectId, 2L, merchantId, merchantAgentId, applicantUserId);
                 WorkflowTask rejectTask = workflowService
@@ -922,6 +1000,12 @@ abstract class AbstractApplicationIT {
                         .taskId(), 2L, OnboardingReviewAction.REJECT, "Business evidence is inconsistent", List
                             .of(), "127.0.0.1"));
                 org.junit.jupiter.api.Assertions.assertEquals("REJECTED", rejected.applicationStatus());
+                org.junit.jupiter.api.Assertions.assertTrue(processEngine.getHistoryService()
+                    .createHistoricActivityInstanceQuery()
+                    .processInstanceId(rejectFlow.processInstanceId())
+                    .activityId("rejectedEnd")
+                    .finished()
+                    .count() > 0);
 
                 WorkflowRef selfReviewFlow = startReviewWorkflow(tenantId, processKey, applicationSelfReviewId, 3L, merchantId, merchantAgentId, applicantUserId);
                 WorkflowTask selfReviewTask = workflowService
@@ -980,7 +1064,7 @@ abstract class AbstractApplicationIT {
                     .queryForObject("SELECT COUNT(*) FROM biz_security_audit WHERE tenant_id = ? AND action LIKE 'WORKFLOW_REVIEW_%'", Integer.class, tenantId));
             });
         } finally {
-            processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
+            processEngine.getRepositoryService().deleteDeployment(deployment.deploymentId(), true);
         }
     }
 
@@ -997,7 +1081,7 @@ abstract class AbstractApplicationIT {
         long retryApplicationId = 934202L;
         long successfulEventId = 934301L;
         long retryEventId = 934302L;
-        String processKey = "merchant-onboarding-review-v1";
+        String processKey = MerchantOnboardingReviewWorkflowDefinition.PROCESS_KEY;
         LocalDateTime fixtureTime = LocalDateTime.of(2026, 8, 23, 11, 0);
         TenantUtils.execute(tenantId, () -> {
             agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "OUTBOX-ROOT"));
@@ -1012,26 +1096,8 @@ abstract class AbstractApplicationIT {
             insertReviewApplication(tenantId, retryApplicationId, merchantId, merchantAgentId, applicantUserId, 1934302L, 2, fixtureTime);
         });
 
-        String bpmn = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                         xmlns:flowable="http://flowable.org/bpmn"
-                         targetNamespace="https://continew.top/workflow/outbox-test">
-              <process id="merchant-onboarding-review-v1" name="Outbox Delivery Test" isExecutable="true">
-                <startEvent id="start" />
-                <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="reviewTask" />
-                <userTask id="reviewTask" name="Merchant Review" flowable:assignee="${applicantId}" />
-                <sequenceFlow id="flow-review-end" sourceRef="reviewTask" targetRef="end" />
-                <endEvent id="end" />
-              </process>
-            </definitions>
-            """;
-        org.flowable.engine.repository.Deployment deployment = processEngine.getRepositoryService()
-            .createDeployment()
-            .tenantId(String.valueOf(tenantId))
-            .name("workflow-outbox-test-934")
-            .addString("workflow-outbox-test-934.bpmn20.xml", bpmn)
-            .deploy();
+        WorkflowDeploymentRef deployment = workflowDeploymentService.deploy(merchantOnboardingReviewWorkflowDefinition
+            .deploymentCommand(tenantId, rootUserId));
         int originalMaxRetries = workflowOutboxPolicy.getMaxRetries();
         try {
             workflowOutboxPolicy.setMaxRetries(3);
@@ -1087,7 +1153,7 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(0, outboxRetryCount(retryEventId));
         } finally {
             workflowOutboxPolicy.setMaxRetries(originalMaxRetries);
-            processEngine.getRepositoryService().deleteDeployment(deployment.getId(), true);
+            processEngine.getRepositoryService().deleteDeployment(deployment.deploymentId(), true);
         }
     }
 

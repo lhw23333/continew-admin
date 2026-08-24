@@ -198,6 +198,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
         verifyWorkflowDeploymentVersionPolicy();
     }
 
+    @Test
+    void merchantOnboardingBpmnSupportsOptionalAiHumanReviewAndTimerEscalation() {
+        verifyMerchantOnboardingWorkflowDefinitionAndTimer();
+    }
+
     private void assertUsesIndex(String expectedIndex, String explainSql) {
         boolean used = jdbcTemplate.queryForList(explainSql)
             .stream()

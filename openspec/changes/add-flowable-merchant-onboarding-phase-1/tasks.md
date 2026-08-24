@@ -99,7 +99,7 @@
 - [x] 8.6 Implement optimistic concurrent task completion and domain-version conflict handling tests
 - [x] 8.7 Implement transactional outbox producer/consumer for domain decisions and Flowable commands/events with retries and repair status
 - [x] 8.8 Implement BPMN deployment verification, stable process keys/node IDs, immutable resource metadata, and in-flight version policy
-- [ ] 8.9 Implement `merchant-onboarding-review-v1` BPMN with optional AI step, human review, approve/reject/supplement/resubmit paths, and timers
+- [x] 8.9 Implement `merchant-onboarding-review-v1` BPMN with optional AI step, human review, approve/reject/supplement/resubmit paths, and timers
 - [ ] 8.10 Implement Vue todo, claimed, done, process-history, task detail, sanitized business summary, supplementation diff, and action dialogs
 - [ ] 8.11 Implement assignment/result/overdue ContiNew messages with notification idempotency and authorized deep links
 

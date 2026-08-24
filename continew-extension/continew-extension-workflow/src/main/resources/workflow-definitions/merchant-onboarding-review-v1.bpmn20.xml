@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="https://continew.top/workflow/merchant-onboarding">
+  <process id="merchant-onboarding-review-v1" name="Merchant Onboarding Review V1" isExecutable="true">
+    <documentation>
+      Identifier-only routing process. Merchant, KYC, channel, and review state remain authoritative in domain tables.
+    </documentation>
+
+    <startEvent id="start" name="Application Submitted"/>
+    <sequenceFlow id="flow-start-ai-routing" sourceRef="start" targetRef="aiRoutingGateway"/>
+
+    <exclusiveGateway id="aiRoutingGateway" name="Optional AI Review?" default="flow-ai-skip"/>
+    <sequenceFlow id="flow-ai-review" sourceRef="aiRoutingGateway" targetRef="aiReviewTask">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${riskLevel != 'UNASSESSED'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-ai-skip" sourceRef="aiRoutingGateway" targetRef="reviewTask"/>
+    <serviceTask id="aiReviewTask" name="Optional AI Review Hook"
+                 flowable:delegateExpression="${merchantOnboardingAiReviewGuardDelegate}"/>
+    <sequenceFlow id="flow-ai-human-review" sourceRef="aiReviewTask" targetRef="reviewTask"/>
+
+    <userTask id="reviewTask" name="Merchant Onboarding Review"
+              flowable:candidateGroups="MERCHANT_REVIEWER,RISK_REVIEWER"/>
+    <boundaryEvent id="reviewEscalationTimer" name="Review Overdue" attachedToRef="reviewTask" cancelActivity="true">
+      <timerEventDefinition>
+        <timeDuration>PT48H</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <sequenceFlow id="flow-review-decision" sourceRef="reviewTask" targetRef="reviewDecisionGateway"/>
+    <sequenceFlow id="flow-review-escalation" sourceRef="reviewEscalationTimer" targetRef="escalatedReviewTask"/>
+    <userTask id="escalatedReviewTask" name="Overdue Merchant Onboarding Review"
+              flowable:candidateGroups="RISK_REVIEWER"/>
+    <sequenceFlow id="flow-escalated-decision" sourceRef="escalatedReviewTask" targetRef="reviewDecisionGateway"/>
+
+    <exclusiveGateway id="reviewDecisionGateway" name="Human Review Decision"/>
+    <sequenceFlow id="flow-review-approved" sourceRef="reviewDecisionGateway" targetRef="approvedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'APPROVE'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-review-rejected" sourceRef="reviewDecisionGateway" targetRef="rejectedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'REJECT'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-review-supplement" sourceRef="reviewDecisionGateway" targetRef="supplementTask">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'REQUEST_SUPPLEMENT'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <userTask id="supplementTask" name="Merchant Supplement" flowable:assignee="${applicantId}"/>
+    <sequenceFlow id="flow-supplement-resubmit" sourceRef="supplementTask" targetRef="reviewTask"/>
+
+    <endEvent id="approvedEnd" name="Human Review Approved"/>
+    <endEvent id="rejectedEnd" name="Human Review Rejected"/>
+  </process>
+</definitions>

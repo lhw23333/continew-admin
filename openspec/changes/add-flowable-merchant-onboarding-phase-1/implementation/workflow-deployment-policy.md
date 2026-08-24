@@ -2,9 +2,10 @@
 
 ## Scope
 
-Task 8.8 establishes a project-owned deployment boundary for Flowable process definitions. It does not introduce the
-production `merchant-onboarding-review-v1` model; that model remains task 8.9. Deployment callers use
-`WorkflowDeploymentService` and never receive Flowable deployment or process-definition entities.
+Task 8.8 establishes a project-owned deployment boundary for Flowable process definitions. The reviewed
+`merchant-onboarding-review-v1` model added by task 8.9 uses this boundary and stays outside Flowable's automatic
+classpath deployment directory. Deployment callers use `WorkflowDeploymentService` and never receive Flowable
+deployment or process-definition entities.
 
 ## Deployment contract
 
