@@ -110,7 +110,7 @@
 - [x] 9.3 Implement versioned endpoint/product/timeout/status-map/key-reference configuration with secret-safe loading
 - [x] 9.4 Implement outbound signing/encryption, timestamp/nonce, business serial, trace correlation, and sanitized transport audit
 - [x] 9.5 Implement callback endpoint signature/certificate/timestamp/replay validation before event persistence
-- [ ] 9.6 Implement channel event idempotency, raw-code retention, versioned normalized mapping, and out-of-order non-regression rules
+- [x] 9.6 Implement channel event idempotency, raw-code retention, versioned normalized mapping, and out-of-order non-regression rules
 - [ ] 9.7 Implement timeout/circuit-breaker/bulkhead/retry policy distinguishing safe queries from uncertain non-idempotent commands
 - [ ] 9.8 Implement SnailJob polling/recovery for supported uncertain states with retry count, next retry, alert, and authorized manual repair
 - [ ] 9.9 Implement channel evidence streaming or short-lived channel-scoped file access with object/hash audit

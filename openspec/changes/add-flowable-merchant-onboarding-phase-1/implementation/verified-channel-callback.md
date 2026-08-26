@@ -19,9 +19,8 @@ Required security headers are:
 - `X-Channel-Key-Version`: derived callback key version; and
 - `X-Channel-Signature`: URL-safe Base64 HMAC-SHA256 without padding.
 
-`channel.callback.enabled` defaults to `false`. Task 9.6 enables the endpoint only after `VerifiedChannelCallback` is
-wired to idempotent channel-event parsing and persistence. This prevents an authenticated callback from being
-acknowledged and discarded during the incremental implementation period.
+`channel.callback.enabled` defaults to `false`. `VerifiedChannelCallback` is wired to idempotent channel-event parsing
+and persistence by task 9.6; deployments can now enable the route only for approved test channels and immutable maps.
 
 ## Fail-closed verification order
 
@@ -34,15 +33,15 @@ acknowledged and discarded during the incremental implementation period.
 5. verify HMAC-SHA256 over the complete callback identity and payload digest;
 6. parse the authenticated JSON and require event ID/type, business type/ID/version/serial, raw status, and occurred time;
 7. atomically claim the hashed nonce in the database; and
-8. append an `ACCEPTED` security audit before returning `VerifiedChannelCallback`.
+8. append an `ACCEPTED` security audit before returning `VerifiedChannelCallback` to event processing.
 
 Any failure appends a sanitized `REJECTED` security audit and raises a category-only `ChannelCallbackException`. Audit
 or replay-store failure prevents the callback from reaching event processing. Provider payload, signature, nonce,
 source address, external key reference, and exception messages are never included in the exception or audit row.
 
-The HTTP response is deliberately generic: validation rejection returns `400 REJECTED`, infrastructure failure returns
-`503 REJECTED`, and successful verification returns `202 VERIFIED`. No sensitive value or detailed failure category is
-echoed to the provider.
+The HTTP response is deliberately generic: validation/event rejection returns `400 REJECTED`, infrastructure failure
+returns `503 REJECTED`, and both newly applied and duplicate valid events return `202 ACCEPTED`. No sensitive value or
+detailed failure category is echoed to the provider.
 
 ## Signature contract
 

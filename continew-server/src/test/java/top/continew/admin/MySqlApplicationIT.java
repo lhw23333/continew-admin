@@ -144,6 +144,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelEventsAreIdempotentMappedAndNonRegressing() {
+        verifyChannelEventsAreIdempotentMappedAndNonRegressing();
+    }
+
+    @Test
     void onboardingDraftsAreExplicitRecoverableAndOptimisticallyVersioned() {
         verifyOnboardingDraftPersistence();
     }

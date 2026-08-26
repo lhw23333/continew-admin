@@ -18,6 +18,7 @@ package top.continew.admin.merchant.onboarding.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
+import top.continew.admin.channel.dto.ChannelStageStatus;
 import top.continew.admin.common.base.model.entity.TenantBaseDO;
 
 import java.io.Serial;
@@ -43,6 +44,19 @@ public class OnboardingApplicationDO extends TenantBaseDO {
     private String idempotencyKey;
     private String status;
     private String activeDraftGuard;
+    private String channelBusinessSerial;
+    private ChannelStageStatus reportingStatus;
+    private ChannelStageStatus agreementStatus;
+    private ChannelStageStatus cardBindingStatus;
+    private ChannelStageStatus reserveAccountStatus;
+    private ChannelStageStatus channelFinalStatus;
+    private Integer reportingRank;
+    private Integer agreementRank;
+    private Integer cardBindingRank;
+    private Integer reserveAccountRank;
+    private Integer channelFinalRank;
+    private Boolean channelFinalTerminal;
+    private String rawChannelStatus;
     private Long submittedBy;
     private LocalDateTime submittedTime;
     private LocalDateTime completedTime;

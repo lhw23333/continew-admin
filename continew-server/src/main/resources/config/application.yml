@@ -404,7 +404,7 @@ workflow:
 
 channel:
   callback:
-    # 9.6 enables this only after verified callbacks are wired to idempotent event processing.
+    # Enable per deployment only after a test channel and its immutable status mapping are approved.
     enabled: false
 
 --- ### 认证配置

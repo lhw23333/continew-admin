@@ -54,7 +54,7 @@ abstract class AbstractMigrationRoundTripIT {
 
     private void applyForward(DataSource dataSource) {
         String prefix = "db/changelog/" + databaseFolder();
-        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/agent-identity.sql", prefix + "/merchant/merchant-identity.sql", prefix + "/merchant/merchant-reverification.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/agent-pricing.sql", prefix + "/merchant/agent-defaults.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/merchant/channel-transport-audit.sql", prefix + "/merchant/channel-callback-security.sql", prefix + "/flowable/flowable-7.1.0.sql");
+        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/agent-identity.sql", prefix + "/merchant/merchant-identity.sql", prefix + "/merchant/merchant-reverification.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/agent-pricing.sql", prefix + "/merchant/agent-defaults.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/merchant/channel-transport-audit.sql", prefix + "/merchant/channel-callback-security.sql", prefix + "/merchant/channel-event-processing.sql", prefix + "/flowable/flowable-7.1.0.sql");
     }
 
     private void execute(DataSource dataSource, String... paths) {

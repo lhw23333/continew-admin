@@ -23,33 +23,52 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.continew.admin.channel.api.ChannelCallbackException;
+import top.continew.admin.channel.api.ChannelEventProcessingException;
 import top.continew.admin.channel.dto.RawChannelCallback;
+import top.continew.admin.channel.dto.VerifiedChannelCallback;
 import top.continew.admin.channel.service.ChannelCallbackVerifier;
+import top.continew.admin.channel.service.ChannelEventProcessor;
+import top.continew.admin.config.channel.ChannelCallbackTenantExecutor;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class ChannelCallbackControllerTest {
     private ChannelCallbackVerifier verifier;
+    private ChannelEventProcessor eventProcessor;
+    private ChannelCallbackTenantExecutor tenantExecutor;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         verifier = mock(ChannelCallbackVerifier.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new ChannelCallbackController(verifier)).build();
+        eventProcessor = mock(ChannelEventProcessor.class);
+        tenantExecutor = mock(ChannelCallbackTenantExecutor.class);
+        doAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return null;
+        }).when(tenantExecutor).execute(anyLong(), any());
+        mockMvc = MockMvcBuilders
+            .standaloneSetup(new ChannelCallbackController(verifier, eventProcessor, tenantExecutor))
+            .build();
     }
 
     @Test
     void verifiedCallbackReturnsAcceptedWithoutEchoingSensitiveHeadersOrBody() throws Exception {
         byte[] payload = "{\"legalIdentifier\":\"91350211M000100Y43\"}"
             .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        VerifiedChannelCallback verifiedCallback = mock(VerifiedChannelCallback.class);
+        when(verifier.verify(any())).thenReturn(verifiedCallback);
 
         mockMvc.perform(post("/channel/callbacks/943/SYNTHETIC/ONBOARDING/CFG-943")
             .header(ChannelCallbackController.TIMESTAMP_HEADER, "1787544000000")
@@ -57,13 +76,14 @@ class ChannelCallbackControllerTest {
             .header(ChannelCallbackController.KEY_VERSION_HEADER, "ref-1234567890abcdef")
             .header(ChannelCallbackController.SIGNATURE_HEADER, "a".repeat(43))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(payload)).andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("VERIFIED"));
+            .content(payload)).andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("ACCEPTED"));
 
         ArgumentCaptor<RawChannelCallback> callback = ArgumentCaptor.forClass(RawChannelCallback.class);
         verify(verifier).verify(callback.capture());
         assertEquals(943L, callback.getValue().tenantId());
         assertEquals("SYNTHETIC", callback.getValue().product().channelCode());
         assertArrayEquals(payload, callback.getValue().payload());
+        verify(eventProcessor).process(verifiedCallback);
     }
 
     @Test
@@ -79,6 +99,21 @@ class ChannelCallbackControllerTest {
     @Test
     void auditFailureReturnsGenericServiceUnavailable() throws Exception {
         doThrow(new ChannelCallbackException(ChannelCallbackException.Code.AUDIT_FAILED)).when(verifier).verify(any());
+
+        mockMvc.perform(post("/channel/callbacks/943/SYNTHETIC/ONBOARDING/CFG-943")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.status").value("REJECTED"));
+    }
+
+    @Test
+    void eventPersistenceFailureReturnsGenericServiceUnavailable() throws Exception {
+        VerifiedChannelCallback verifiedCallback = mock(VerifiedChannelCallback.class);
+        when(verifier.verify(any())).thenReturn(verifiedCallback);
+        doThrow(new ChannelEventProcessingException(ChannelEventProcessingException.Code.PERSISTENCE_FAILED))
+            .when(eventProcessor)
+            .process(verifiedCallback);
 
         mockMvc.perform(post("/channel/callbacks/943/SYNTHETIC/ONBOARDING/CFG-943")
             .contentType(MediaType.APPLICATION_JSON)

@@ -62,6 +62,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/channel-callback-security.sql
   - include:
+      file: db/changelog/mysql/merchant/channel-event-processing.sql
+  - include:
       file: db/changelog/mysql/merchant/agent-pricing.sql
   - include:
       file: db/changelog/mysql/merchant/agent-defaults.sql

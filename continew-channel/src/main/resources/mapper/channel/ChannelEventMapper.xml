@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.continew.admin.channel.adapter.ChannelEventMapper">
+
+    <insert id="claim" databaseId="mysql">
+        INSERT IGNORE INTO biz_channel_event
+        (id, tenant_id, channel_code, product_code, config_version, channel_event_id, event_key,
+         application_id, merchant_id, business_type, business_version, business_serial, event_type,
+         channel_request_id, raw_status, mapping_version, payload_hash, sanitized_payload_json,
+         signature_key_version, occurred_time, received_time, processing_status, state_applied,
+         retry_count, trace_id, row_version, create_time)
+        VALUES
+        (#{id}, #{tenantId}, #{channelCode}, #{productCode}, #{configVersion}, #{channelEventId}, #{eventKey},
+         #{applicationId}, #{merchantId}, #{businessType}, #{businessVersion}, #{businessSerial}, #{eventType},
+         #{channelRequestId}, #{rawStatus}, #{mappingVersion}, #{payloadHash}, #{sanitizedPayloadJson},
+         #{signatureKeyVersion}, #{occurredTime}, #{receivedTime}, #{processingStatus}, #{stateApplied},
+         #{retryCount}, #{traceId}, #{rowVersion}, #{createTime})
+    </insert>
+
+    <insert id="claim" databaseId="pgsql">
+        INSERT INTO biz_channel_event
+        (id, tenant_id, channel_code, product_code, config_version, channel_event_id, event_key,
+         application_id, merchant_id, business_type, business_version, business_serial, event_type,
+         channel_request_id, raw_status, mapping_version, payload_hash, sanitized_payload_json,
+         signature_key_version, occurred_time, received_time, processing_status, state_applied,
+         retry_count, trace_id, row_version, create_time)
+        VALUES
+        (#{id}, #{tenantId}, #{channelCode}, #{productCode}, #{configVersion}, #{channelEventId}, #{eventKey},
+         #{applicationId}, #{merchantId}, #{businessType}, #{businessVersion}, #{businessSerial}, #{eventType},
+         #{channelRequestId}, #{rawStatus}, #{mappingVersion}, #{payloadHash}, #{sanitizedPayloadJson},
+         #{signatureKeyVersion}, #{occurredTime}, #{receivedTime}, #{processingStatus}, #{stateApplied},
+         #{retryCount}, #{traceId}, #{rowVersion}, #{createTime})
+        ON CONFLICT (tenant_id, channel_code, event_key) DO NOTHING
+    </insert>
+</mapper>

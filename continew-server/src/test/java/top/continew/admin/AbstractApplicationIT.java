@@ -30,12 +30,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import top.continew.admin.channel.api.ChannelCallbackException;
 import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
+import top.continew.admin.channel.api.ChannelEventProcessingException;
 import top.continew.admin.channel.api.ChannelTransportAuditPort;
 import top.continew.admin.channel.service.ChannelConfigurationLoader;
 import top.continew.admin.channel.dto.ChannelBusinessType;
 import top.continew.admin.channel.dto.ChannelCommandContext;
 import top.continew.admin.channel.dto.ChannelConnectionStatus;
 import top.continew.admin.channel.dto.ChannelEndpointConfiguration;
+import top.continew.admin.channel.dto.ChannelEventProcessingOutcome;
+import top.continew.admin.channel.dto.ChannelEventProcessingResult;
 import top.continew.admin.channel.dto.ChannelMappedStatus;
 import top.continew.admin.channel.dto.ChannelOnboardingState;
 import top.continew.admin.channel.dto.ChannelOperation;
@@ -49,6 +52,7 @@ import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
 import top.continew.admin.channel.dto.ChannelTransportOutcome;
 import top.continew.admin.channel.dto.VerifiedChannelCallback;
 import top.continew.admin.channel.service.ChannelCallbackVerifier;
+import top.continew.admin.channel.service.ChannelEventProcessor;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultCreateCommand;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultService;
@@ -310,6 +314,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelCallbackVerifier channelCallbackVerifier;
+
+    @Autowired
+    private ChannelEventProcessor channelEventProcessor;
 
     @Autowired
     private ChannelTransportAuditPort channelTransportAuditPort;
@@ -2608,6 +2615,219 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(eventsBefore, jdbcTemplate
                 .queryForObject("SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ?", Integer.class, tenantId));
         });
+    }
+
+    protected void verifyChannelEventsAreIdempotentMappedAndNonRegressing() {
+        long tenantId = 944L;
+        long applicationId = 944001L;
+        long merchantId = 944101L;
+        long kycVersionId = 944301L;
+        ChannelProductKey product = new ChannelProductKey("SYNTHETIC", "ONBOARDING");
+        String configVersion = "CFG-944";
+        LocalDateTime baseTime = LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(3);
+        insertChannelConnectionVersion(944601L, tenantId, product, configVersion, channelEndpointJson(), channelTimeoutJson(), "MAP-944", channelEventStatusMappingJson(), "ENABLED", baseTime);
+        jdbcTemplate.update("""
+            INSERT INTO biz_onboarding_application
+            (id, tenant_id, application_no, merchant_id, owning_agent_id, channel_code, product_code,
+             requirement_version, channel_config_version, kyc_version_id, status, row_version, create_time, deleted)
+            VALUES (?, ?, 'APP-944', ?, 944201, ?, ?, 'REQ-944', ?, ?, 'CHANNEL_PROCESSING', 0, ?, 0)
+            """, applicationId, tenantId, merchantId, product.channelCode(), product
+            .productCode(), configVersion, kycVersionId, baseTime);
+        jdbcTemplate.update("""
+            INSERT INTO biz_kyc_version
+            (id, tenant_id, merchant_id, onboarding_application_id, version_no, requirement_version,
+             status, saved_step, legal_name, row_version, create_time, deleted)
+            VALUES (?, ?, ?, ?, 1, 'REQ-944', 'SUBMITTED', 5, 'Channel Event Merchant', 2, ?, 0)
+            """, kycVersionId, tenantId, merchantId, applicationId, baseTime);
+
+        TenantUtils.execute(tenantId, () -> {
+            String cardPayload = channelEventPayload("EVENT-CARD-944", applicationId, 2L, "SERIAL-944", "CARD_OK", baseTime
+                .plusSeconds(20), "91350211M000100Y43");
+            ChannelEventProcessingResult card = channelEventProcessor
+                .process(verifiedEventCallback(tenantId, product, configVersion, cardPayload, baseTime
+                    .plusSeconds(30)));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.APPLIED, card.outcome());
+
+            String reportPayload = channelEventPayload("EVENT-REPORT-944", applicationId, 2L, "SERIAL-944", "REPORT_OK", baseTime
+                .plusSeconds(10), "91350211M000100Y43");
+            VerifiedChannelCallback reportCallback = verifiedEventCallback(tenantId, product, configVersion, reportPayload, baseTime
+                .plusSeconds(40));
+            ChannelEventProcessingResult report = channelEventProcessor.process(reportCallback);
+            ChannelEventProcessingResult duplicate = channelEventProcessor.process(reportCallback);
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.APPLIED, report.outcome());
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.DUPLICATE, duplicate.outcome());
+            org.junit.jupiter.api.Assertions.assertEquals(report.eventRecordId(), duplicate.eventRecordId());
+
+            String conflictPayload = channelEventPayload("EVENT-REPORT-944", applicationId, 2L, "SERIAL-944", "FINAL_OK", baseTime
+                .plusSeconds(10), null);
+            ChannelEventProcessingException conflict = org.junit.jupiter.api.Assertions
+                .assertThrows(ChannelEventProcessingException.class, () -> channelEventProcessor
+                    .process(verifiedEventCallback(tenantId, product, configVersion, conflictPayload, baseTime
+                        .plusSeconds(41))));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(ChannelEventProcessingException.Code.EVENT_ID_CONFLICT, conflict.code());
+
+            String finalPayload = channelEventPayload("EVENT-FINAL-944", applicationId, 2L, "SERIAL-944", "FINAL_OK", baseTime
+                .plusSeconds(50), null);
+            ChannelEventProcessingResult finalResult = channelEventProcessor
+                .process(verifiedEventCallback(tenantId, product, configVersion, finalPayload, baseTime
+                    .plusSeconds(60)));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.APPLIED, finalResult.outcome());
+
+            String oldFailurePayload = channelEventPayload("EVENT-OLD-FAIL-944", applicationId, 2L, "SERIAL-944", "FINAL_FAILED_OLD", baseTime
+                .plusSeconds(45), null);
+            ChannelEventProcessingResult oldFailure = channelEventProcessor
+                .process(verifiedEventCallback(tenantId, product, configVersion, oldFailurePayload, baseTime
+                    .plusSeconds(70)));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.RECORDED_NO_CHANGE, oldFailure
+                .outcome());
+
+            String unmappedPayload = channelEventPayload("EVENT-UNKNOWN-944", applicationId, 2L, "SERIAL-944", "RAW_NEW_UNKNOWN", baseTime
+                .plusSeconds(65), null);
+            ChannelEventProcessingResult unmapped = channelEventProcessor
+                .process(verifiedEventCallback(tenantId, product, configVersion, unmappedPayload, baseTime
+                    .plusSeconds(80)));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelEventProcessingOutcome.RECORDED_FAILED, unmapped
+                .outcome());
+
+            String wrongVersionPayload = channelEventPayload("EVENT-WRONG-VERSION-944", applicationId, 3L, "SERIAL-944", "REPORT_OK", baseTime
+                .plusSeconds(75), null);
+            ChannelEventProcessingException wrongVersion = org.junit.jupiter.api.Assertions
+                .assertThrows(ChannelEventProcessingException.class, () -> channelEventProcessor
+                    .process(verifiedEventCallback(tenantId, product, configVersion, wrongVersionPayload, baseTime
+                        .plusSeconds(90))));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(ChannelEventProcessingException.Code.BUSINESS_VERSION_MISMATCH, wrongVersion.code());
+
+            jdbcTemplate.update("""
+                UPDATE biz_kyc_version SET row_version = 3 WHERE tenant_id = ? AND id = ?
+                """, tenantId, kycVersionId);
+            ChannelEventProcessingResult duplicateAfterVersionChange = channelEventProcessor.process(reportCallback);
+            org.junit.jupiter.api.Assertions
+                .assertEquals(ChannelEventProcessingOutcome.DUPLICATE, duplicateAfterVersionChange.outcome());
+            org.junit.jupiter.api.Assertions.assertEquals(report.eventRecordId(), duplicateAfterVersionChange
+                .eventRecordId());
+
+            assertPersistedChannelEventState(tenantId, applicationId);
+        });
+    }
+
+    private void assertPersistedChannelEventState(long tenantId, long applicationId) {
+        Map<String, Object> application = jdbcTemplate.queryForMap("""
+            SELECT reporting_status, reporting_rank, card_binding_status, card_binding_rank,
+                   channel_final_status, channel_final_rank, channel_final_terminal,
+                   raw_channel_status, channel_business_serial, row_version
+            FROM biz_onboarding_application WHERE tenant_id = ? AND id = ?
+            """, tenantId, applicationId);
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCEEDED", value(application, "reporting_status"));
+        org.junit.jupiter.api.Assertions.assertEquals("20", value(application, "reporting_rank"));
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCEEDED", value(application, "card_binding_status"));
+        org.junit.jupiter.api.Assertions.assertEquals("40", value(application, "card_binding_rank"));
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCEEDED", value(application, "channel_final_status"));
+        org.junit.jupiter.api.Assertions.assertEquals("100", value(application, "channel_final_rank"));
+        org.junit.jupiter.api.Assertions.assertEquals("SERIAL-944", value(application, "channel_business_serial"));
+        org.junit.jupiter.api.Assertions.assertEquals("FINAL_OK", value(application, "raw_channel_status"));
+        org.junit.jupiter.api.Assertions.assertEquals("3", value(application, "row_version"));
+        Object terminal = application.entrySet()
+            .stream()
+            .filter(entry -> "channel_final_terminal".equalsIgnoreCase(entry.getKey()))
+            .findFirst()
+            .orElseThrow()
+            .getValue();
+        org.junit.jupiter.api.Assertions.assertTrue(Boolean.TRUE.equals(terminal) || Integer.valueOf(1)
+            .equals(terminal) || Long.valueOf(1).equals(terminal));
+
+        org.junit.jupiter.api.Assertions.assertEquals(5, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ? AND application_id = ?
+            """, Integer.class, tenantId, applicationId));
+        org.junit.jupiter.api.Assertions.assertEquals(5, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM biz_channel_event
+            WHERE tenant_id = ? AND application_id = ? AND mapping_version = 'MAP-944'
+            """, Integer.class, tenantId, applicationId));
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM biz_channel_event
+            WHERE tenant_id = ? AND channel_event_id = 'EVENT-OLD-FAIL-944'
+              AND raw_status = 'FINAL_FAILED_OLD' AND final_status = 'FAILED'
+              AND processing_status = 'IGNORED_NON_REGRESSION' AND state_applied = ?
+            """, Integer.class, tenantId, false));
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+            SELECT COUNT(*) FROM biz_channel_event
+            WHERE tenant_id = ? AND channel_event_id = 'EVENT-UNKNOWN-944'
+              AND raw_status = 'RAW_NEW_UNKNOWN' AND processing_status = 'FAILED'
+              AND last_error_category = 'UNMAPPED_STATUS'
+            """, Integer.class, tenantId));
+        String sanitized = jdbcTemplate.queryForObject("""
+            SELECT sanitized_payload_json FROM biz_channel_event
+            WHERE tenant_id = ? AND channel_event_id = 'EVENT-CARD-944'
+            """, String.class, tenantId);
+        org.junit.jupiter.api.Assertions.assertFalse(sanitized.contains("91350211M000100Y43"));
+        org.junit.jupiter.api.Assertions.assertTrue(sanitized.contains("CARD_OK"));
+    }
+
+    private String channelEventStatusMappingJson() {
+        Map<String, ChannelMappedStatus> entries = new java.util.LinkedHashMap<>();
+        entries
+            .put("REPORT_OK", new ChannelMappedStatus(ChannelOperationStatus.SUCCEEDED, new ChannelOnboardingState(ChannelStageStatus.SUCCEEDED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED), null, 20, false));
+        entries
+            .put("CARD_OK", new ChannelMappedStatus(ChannelOperationStatus.SUCCEEDED, new ChannelOnboardingState(ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED), null, 40, false));
+        entries
+            .put("FINAL_FAILED_OLD", new ChannelMappedStatus(ChannelOperationStatus.FAILED, new ChannelOnboardingState(ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.FAILED), null, 90, true));
+        entries
+            .put("FINAL_OK", new ChannelMappedStatus(ChannelOperationStatus.SUCCEEDED, new ChannelOnboardingState(ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED), null, 100, true));
+        try {
+            return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new ChannelStatusMapping(entries));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String channelEventPayload(String eventId,
+                                       long applicationId,
+                                       long businessVersion,
+                                       String businessSerial,
+                                       String rawStatusCode,
+                                       LocalDateTime occurredTime,
+                                       String legalIdentifier) {
+        com.fasterxml.jackson.databind.node.ObjectNode value = applicationContext
+            .getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+            .createObjectNode();
+        value.put("eventId", eventId);
+        value.put("eventType", "STATUS_CHANGED");
+        value.put("businessType", "ONBOARDING");
+        value.put("businessId", applicationId);
+        value.put("businessVersion", businessVersion);
+        value.put("businessSerial", businessSerial);
+        value.put("channelRequestId", "REQUEST-944");
+        value.put("rawStatusCode", rawStatusCode);
+        value.put("occurredTime", occurredTime.atOffset(java.time.ZoneOffset.UTC).toString());
+        value.put("traceId", "TRACE-944");
+        if (legalIdentifier != null) {
+            value.put("legalIdentifier", legalIdentifier);
+        }
+        return value.toString();
+    }
+
+    private VerifiedChannelCallback verifiedEventCallback(long tenantId,
+                                                          ChannelProductKey product,
+                                                          String configVersion,
+                                                          String payload,
+                                                          LocalDateTime receivedTime) {
+        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+        return new VerifiedChannelCallback(tenantId, product, configVersion, receivedTime
+            .toInstant(java.time.ZoneOffset.UTC)
+            .toEpochMilli(), "noncefp" + sha256(bytes)
+                .substring(0, 12), "ref-callback944000", sha256(bytes), bytes, receivedTime);
+    }
+
+    private String value(Map<String, Object> row, String key) {
+        return row.entrySet()
+            .stream()
+            .filter(entry -> key.equalsIgnoreCase(entry.getKey()))
+            .map(Map.Entry::getValue)
+            .map(String::valueOf)
+            .findFirst()
+            .orElseThrow();
     }
 
     private String channelEndpointJson() {

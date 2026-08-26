@@ -32,9 +32,12 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import top.continew.admin.channel.api.ChannelCallbackException;
+import top.continew.admin.channel.api.ChannelEventProcessingException;
 import top.continew.admin.channel.dto.ChannelProductKey;
 import top.continew.admin.channel.dto.RawChannelCallback;
 import top.continew.admin.channel.service.ChannelCallbackVerifier;
+import top.continew.admin.channel.service.ChannelEventProcessor;
+import top.continew.admin.config.channel.ChannelCallbackTenantExecutor;
 import top.continew.starter.log.annotation.Log;
 
 /** Public provider callback boundary. Event persistence is wired by the next channel-processing phase. */
@@ -51,6 +54,8 @@ public class ChannelCallbackController {
     public static final String SIGNATURE_HEADER = "X-Channel-Signature";
 
     private final ChannelCallbackVerifier verifier;
+    private final ChannelEventProcessor eventProcessor;
+    private final ChannelCallbackTenantExecutor tenantExecutor;
 
     @Log(ignore = true)
     @Operation(summary = "接收并验证渠道回调", description = "验签、时间窗、密钥版本和防重放全部通过后才进入事件处理边界")
@@ -65,16 +70,26 @@ public class ChannelCallbackController {
                                                            @RequestHeader(name = SIGNATURE_HEADER, required = false) String signature,
                                                            @RequestBody(required = false) byte[] payload,
                                                            HttpServletRequest request) {
-        verifier
+        tenantExecutor.execute(tenantId, () -> eventProcessor.process(verifier
             .verify(new RawChannelCallback(tenantId, new ChannelProductKey(channelCode, productCode), configVersion, timestamp, nonce, keyVersion, signature, payload, request
-                .getRemoteAddr()));
-        return ResponseEntity.accepted().body(new CallbackAcknowledgement("VERIFIED"));
+                .getRemoteAddr()))));
+        return ResponseEntity.accepted().body(new CallbackAcknowledgement("ACCEPTED"));
     }
 
     @ExceptionHandler(ChannelCallbackException.class)
     public ResponseEntity<CallbackAcknowledgement> reject(ChannelCallbackException exception) {
         HttpStatus status = switch (exception.code()) {
             case CONFIGURATION_UNAVAILABLE, REPLAY_STORE_FAILED, AUDIT_FAILED -> HttpStatus.SERVICE_UNAVAILABLE;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+        return ResponseEntity.status(status).body(new CallbackAcknowledgement("REJECTED"));
+    }
+
+    @ExceptionHandler(ChannelEventProcessingException.class)
+    public ResponseEntity<CallbackAcknowledgement> reject(ChannelEventProcessingException exception) {
+        HttpStatus status = switch (exception.code()) {
+            case CONFIGURATION_UNAVAILABLE, CONCURRENT_STATE_CHANGE, PERSISTENCE_FAILED ->
+                HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
         return ResponseEntity.status(status).body(new CallbackAcknowledgement("REJECTED"));
