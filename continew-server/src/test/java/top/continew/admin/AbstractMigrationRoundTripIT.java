@@ -54,7 +54,7 @@ abstract class AbstractMigrationRoundTripIT {
 
     private void applyForward(DataSource dataSource) {
         String prefix = "db/changelog/" + databaseFolder();
-        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/agent-identity.sql", prefix + "/merchant/merchant-identity.sql", prefix + "/merchant/merchant-reverification.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/agent-pricing.sql", prefix + "/merchant/agent-defaults.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/flowable/flowable-7.1.0.sql");
+        execute(dataSource, prefix + "/merchant/merchant-core.sql", prefix + "/merchant/agent-identity.sql", prefix + "/merchant/merchant-identity.sql", prefix + "/merchant/merchant-reverification.sql", prefix + "/merchant/sensitive-key-versions.sql", prefix + "/merchant/merchant-operations.sql", prefix + "/merchant/agent-pricing.sql", prefix + "/merchant/agent-defaults.sql", prefix + "/merchant/merchant-constraints.sql", prefix + "/merchant/merchant-indexes.sql", prefix + "/merchant/channel-transport-audit.sql", prefix + "/merchant/channel-callback-security.sql", prefix + "/flowable/flowable-7.1.0.sql");
     }
 
     private void execute(DataSource dataSource, String... paths) {
@@ -69,6 +69,10 @@ abstract class AbstractMigrationRoundTripIT {
     private void assertSchemaPresent(DataSource dataSource) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM biz_agent", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM biz_channel_transport_audit", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM biz_channel_callback_nonce", Integer.class));
+        assertEquals(0, jdbcTemplate
+            .queryForObject("SELECT COUNT(*) FROM biz_channel_callback_security_audit", Integer.class));
         assertEquals("7.1.0.2", jdbcTemplate
             .queryForObject("SELECT VALUE_ FROM ACT_GE_PROPERTY WHERE NAME_ = 'schema.version'", String.class));
     }
@@ -77,6 +81,12 @@ abstract class AbstractMigrationRoundTripIT {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         assertThrows(DataAccessException.class, () -> jdbcTemplate
             .queryForObject("SELECT COUNT(*) FROM biz_agent", Integer.class));
+        assertThrows(DataAccessException.class, () -> jdbcTemplate
+            .queryForObject("SELECT COUNT(*) FROM biz_channel_transport_audit", Integer.class));
+        assertThrows(DataAccessException.class, () -> jdbcTemplate
+            .queryForObject("SELECT COUNT(*) FROM biz_channel_callback_nonce", Integer.class));
+        assertThrows(DataAccessException.class, () -> jdbcTemplate
+            .queryForObject("SELECT COUNT(*) FROM biz_channel_callback_security_audit", Integer.class));
         assertThrows(DataAccessException.class, () -> jdbcTemplate
             .queryForObject("SELECT COUNT(*) FROM ACT_GE_PROPERTY", Integer.class));
     }

@@ -60,10 +60,12 @@ class SensitiveEndpointLogSanitizerTest {
     @Test
     void redactsCredentialHeadersAndLongSensitiveNumbers() {
         Map<String, String> sanitizedHeaders = sanitizer.sanitizeHeaders(Map
-            .of("Authorization", "Bearer secret-token", "X-Trace-Id", "trace-1", "Cookie", "session=secret"));
+            .of("Authorization", "Bearer secret-token", "X-Trace-Id", "trace-1", "Cookie", "session=secret", "X-Channel-Nonce", "nonce-raw-value", "X-Channel-Signature", "signature-raw-value"));
 
         assertEquals("[REDACTED]", sanitizedHeaders.get("Authorization"));
         assertEquals("[REDACTED]", sanitizedHeaders.get("Cookie"));
+        assertEquals("[REDACTED]", sanitizedHeaders.get("X-Channel-Nonce"));
+        assertEquals("[REDACTED]", sanitizedHeaders.get("X-Channel-Signature"));
         assertEquals("trace-1", sanitizedHeaders.get("X-Trace-Id"));
         assertEquals("Merchant [REDACTED] failed", sanitizer.sanitizeText("Merchant 13800138000 failed"));
     }

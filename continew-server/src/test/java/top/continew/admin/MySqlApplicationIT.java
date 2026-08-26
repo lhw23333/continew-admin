@@ -134,6 +134,16 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelTransportAuditIsSanitizedAndAppendOnly() {
+        verifyChannelTransportAuditIsSanitizedAndAppendOnly();
+    }
+
+    @Test
+    void channelCallbackIsAuthenticatedReplaySafeAndAudited() {
+        verifyChannelCallbackIsAuthenticatedReplaySafeAndAudited();
+    }
+
+    @Test
     void onboardingDraftsAreExplicitRecoverableAndOptimisticallyVersioned() {
         verifyOnboardingDraftPersistence();
     }

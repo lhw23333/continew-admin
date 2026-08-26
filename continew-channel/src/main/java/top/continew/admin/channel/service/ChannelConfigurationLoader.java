@@ -22,6 +22,7 @@ import top.continew.admin.channel.api.ChannelConfigurationException;
 import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
 import top.continew.admin.channel.api.ChannelSecret;
 import top.continew.admin.channel.api.ChannelSecretProvider;
+import top.continew.admin.channel.api.LoadedChannelCallbackConfiguration;
 import top.continew.admin.channel.api.LoadedChannelConfiguration;
 import top.continew.admin.channel.dto.ChannelConnectionConfig;
 import top.continew.admin.channel.dto.ChannelProductKey;
@@ -39,11 +40,7 @@ public class ChannelConfigurationLoader {
                                            ChannelProductKey product,
                                            String configVersion,
                                            LocalDateTime effectiveAt) {
-        ChannelConnectionConfig config = catalog.findVersion(tenantId, product, configVersion)
-            .orElseThrow(() -> unavailable("Channel configuration is unavailable"));
-        if (effectiveAt == null || !config.isEffectiveAt(effectiveAt)) {
-            throw unavailable("Channel configuration is not effective");
-        }
+        ChannelConnectionConfig config = loadConfig(tenantId, product, configVersion, effectiveAt);
         ChannelSecret signing = null;
         ChannelSecret encryption = null;
         try {
@@ -62,6 +59,36 @@ public class ChannelConfigurationLoader {
                 throw configurationException;
             throw unavailable("Channel secret material is unavailable");
         }
+    }
+
+    public LoadedChannelCallbackConfiguration loadCallback(Long tenantId,
+                                                           ChannelProductKey product,
+                                                           String configVersion,
+                                                           LocalDateTime effectiveAt) {
+        ChannelConnectionConfig config = loadConfig(tenantId, product, configVersion, effectiveAt);
+        ChannelSecret callback = null;
+        try {
+            callback = secretProvider.resolve(config.keyReferences().callbackVerification());
+            return new LoadedChannelCallbackConfiguration(config, callback);
+        } catch (RuntimeException ex) {
+            if (callback != null)
+                callback.close();
+            if (ex instanceof ChannelConfigurationException configurationException)
+                throw configurationException;
+            throw unavailable("Channel secret material is unavailable");
+        }
+    }
+
+    private ChannelConnectionConfig loadConfig(Long tenantId,
+                                               ChannelProductKey product,
+                                               String configVersion,
+                                               LocalDateTime effectiveAt) {
+        ChannelConnectionConfig config = catalog.findVersion(tenantId, product, configVersion)
+            .orElseThrow(() -> unavailable("Channel configuration is unavailable"));
+        if (effectiveAt == null || !config.isEffectiveAt(effectiveAt)) {
+            throw unavailable("Channel configuration is not effective");
+        }
+        return config;
     }
 
     private ChannelConfigurationException unavailable(String message) {

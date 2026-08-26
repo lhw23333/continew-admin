@@ -28,8 +28,12 @@ import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import top.continew.admin.channel.api.ChannelCallbackException;
 import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
+import top.continew.admin.channel.api.ChannelTransportAuditPort;
 import top.continew.admin.channel.service.ChannelConfigurationLoader;
+import top.continew.admin.channel.dto.ChannelBusinessType;
+import top.continew.admin.channel.dto.ChannelCommandContext;
 import top.continew.admin.channel.dto.ChannelConnectionStatus;
 import top.continew.admin.channel.dto.ChannelEndpointConfiguration;
 import top.continew.admin.channel.dto.ChannelMappedStatus;
@@ -37,9 +41,14 @@ import top.continew.admin.channel.dto.ChannelOnboardingState;
 import top.continew.admin.channel.dto.ChannelOperation;
 import top.continew.admin.channel.dto.ChannelOperationStatus;
 import top.continew.admin.channel.dto.ChannelProductKey;
+import top.continew.admin.channel.dto.RawChannelCallback;
 import top.continew.admin.channel.dto.ChannelStageStatus;
 import top.continew.admin.channel.dto.ChannelStatusMapping;
 import top.continew.admin.channel.dto.ChannelTimeoutPolicy;
+import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
+import top.continew.admin.channel.dto.ChannelTransportOutcome;
+import top.continew.admin.channel.dto.VerifiedChannelCallback;
+import top.continew.admin.channel.service.ChannelCallbackVerifier;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultCreateCommand;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultService;
@@ -298,6 +307,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelConfigurationLoader channelConfigurationLoader;
+
+    @Autowired
+    private ChannelCallbackVerifier channelCallbackVerifier;
+
+    @Autowired
+    private ChannelTransportAuditPort channelTransportAuditPort;
 
     @Autowired
     private OnboardingDraftService onboardingDraftService;
@@ -2460,6 +2475,211 @@ abstract class AbstractApplicationIT {
                 DELETE FROM biz_channel_connection_version WHERE tenant_id = ? AND id = ?
                 """, tenantId, 941601L));
         });
+    }
+
+    protected void verifyChannelTransportAuditIsSanitizedAndAppendOnly() {
+        long tenantId = 942L;
+        LocalDateTime requestTime = LocalDateTime.of(2026, 8, 24, 9, 0);
+        ChannelCommandContext context = new ChannelCommandContext(tenantId, new ChannelProductKey("SYNTHETIC", "ONBOARDING"), "CFG-942", ChannelBusinessType.ONBOARDING, 942001L, 2L, "SERIAL-942", "TRACE-942");
+        TenantUtils.execute(tenantId, () -> {
+            Long auditId = channelTransportAuditPort
+                .append(new ChannelTransportAuditRecord(context, ChannelOperation.SUBMIT_ONBOARDING, ChannelTransportOutcome.SUCCEEDED, requestTime, requestTime
+                    .plusSeconds(1), 1000L, "nonce-fingerprint-942", "ref-signing-942", "ref-encryption-942", 202, null));
+
+            org.junit.jupiter.api.Assertions.assertNotNull(auditId);
+            Map<String, Object> row = jdbcTemplate.queryForMap("""
+                SELECT * FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId);
+            org.junit.jupiter.api.Assertions.assertEquals("SERIAL-942", jdbcTemplate.queryForObject("""
+                SELECT business_serial FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals("TRACE-942", jdbcTemplate.queryForObject("""
+                SELECT trace_id FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals("nonce-fingerprint-942", jdbcTemplate.queryForObject("""
+                SELECT nonce_fingerprint FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+            String persistedValues = row.values().toString();
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("91350211M000100Y43"));
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("env://"));
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("synthetic.invalid"));
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE LOWER(table_name) = 'biz_channel_transport_audit'
+                  AND LOWER(column_name) IN
+                      ('payload', 'request_payload', 'response_payload', 'endpoint', 'nonce', 'signature',
+                       'signing_key_ref', 'encryption_key_ref')
+                """, Integer.class));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_channel_transport_audit SET outcome = 'FAILED' WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals("SUCCEEDED", jdbcTemplate.queryForObject("""
+                SELECT outcome FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+        });
+    }
+
+    protected void verifyChannelCallbackIsAuthenticatedReplaySafeAndAudited() {
+        long tenantId = 943L;
+        ChannelProductKey product = new ChannelProductKey("SYNTHETIC", "ONBOARDING");
+        String configVersion = "CFG-943";
+        LocalDateTime baseTime = LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(2);
+        insertChannelConnectionVersion(943601L, tenantId, product, configVersion, channelEndpointJson(), channelTimeoutJson(), "MAP-943", channelStatusMappingJson(), "ENABLED", baseTime);
+        byte[] payload = "{\"eventId\":\"EVENT-943\",\"eventType\":\"STATUS_CHANGED\",\"businessType\":\"ONBOARDING\",\"businessId\":943001,\"businessVersion\":2,\"businessSerial\":\"SERIAL-943\",\"rawStatusCode\":\"PROCESSING\",\"occurredTime\":\"2026-08-25T00:00:00Z\",\"legalIdentifier\":\"91350211M000100Y43\"}"
+            .getBytes(StandardCharsets.UTF_8);
+        String keyVersion = callbackKeyVersion("env://channel.test.callback-key");
+        long timestamp = System.currentTimeMillis();
+
+        TenantUtils.execute(tenantId, () -> {
+            int eventsBefore = jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ?", Integer.class, tenantId);
+            RawChannelCallback invalid = new RawChannelCallback(tenantId, product, configVersion, Long
+                .toString(timestamp), "nonce-invalid-94301", keyVersion, "a".repeat(43), payload, "203.0.113.9");
+            ChannelCallbackException invalidFailure = org.junit.jupiter.api.Assertions
+                .assertThrows(ChannelCallbackException.class, () -> channelCallbackVerifier.verify(invalid));
+            org.junit.jupiter.api.Assertions
+                .assertEquals(ChannelCallbackException.Code.SIGNATURE_INVALID, invalidFailure.code());
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_callback_nonce WHERE tenant_id = ?
+                """, Integer.class, tenantId));
+
+            String nonce = "nonce-valid-943001";
+            String signature = signChannelCallback(tenantId, product, configVersion, timestamp, nonce, keyVersion, payload);
+            RawChannelCallback valid = new RawChannelCallback(tenantId, product, configVersion, Long
+                .toString(timestamp), nonce, keyVersion, signature, payload, "203.0.113.9");
+            VerifiedChannelCallback verified = channelCallbackVerifier.verify(valid);
+            org.junit.jupiter.api.Assertions.assertEquals(configVersion, verified.configVersion());
+            org.junit.jupiter.api.Assertions.assertEquals(keyVersion, verified.keyVersion());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(payload, verified.payload());
+            ChannelCallbackException replayFailure = org.junit.jupiter.api.Assertions
+                .assertThrows(ChannelCallbackException.class, () -> channelCallbackVerifier.verify(valid));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelCallbackException.Code.REPLAY_DETECTED, replayFailure
+                .code());
+
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_callback_nonce WHERE tenant_id = ?
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(3, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_callback_security_audit WHERE tenant_id = ?
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_callback_security_audit
+                WHERE tenant_id = ? AND outcome = 'ACCEPTED'
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_callback_security_audit
+                WHERE tenant_id = ? AND outcome = 'REJECTED'
+                """, Integer.class, tenantId));
+            String nonceHash = jdbcTemplate.queryForObject("""
+                SELECT nonce_hash FROM biz_channel_callback_nonce WHERE tenant_id = ?
+                """, String.class, tenantId);
+            org.junit.jupiter.api.Assertions.assertEquals(sha256(nonce.getBytes(StandardCharsets.UTF_8)), nonceHash);
+            org.junit.jupiter.api.Assertions.assertFalse(nonceHash.contains(nonce));
+            Map<String, Object> acceptedAudit = jdbcTemplate.queryForMap("""
+                SELECT * FROM biz_channel_callback_security_audit
+                WHERE tenant_id = ? AND outcome = 'ACCEPTED'
+                """, tenantId);
+            String persistedValues = acceptedAudit.values().toString();
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("91350211M000100Y43"));
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains(signature));
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("203.0.113.9"));
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE LOWER(table_name) = 'biz_channel_callback_security_audit'
+                  AND LOWER(column_name) IN
+                      ('payload', 'request_payload', 'nonce', 'signature', 'source_address', 'callback_key_ref')
+                """, Integer.class));
+            Long acceptedAuditId = ((Number)acceptedAudit.entrySet()
+                .stream()
+                .filter(entry -> "id".equalsIgnoreCase(entry.getKey()))
+                .findFirst()
+                .orElseThrow()
+                .getValue()).longValue();
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_channel_callback_security_audit SET outcome = 'REJECTED'
+                WHERE tenant_id = ? AND id = ?
+                """, tenantId, acceptedAuditId));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_channel_callback_security_audit WHERE tenant_id = ? AND id = ?
+                """, tenantId, acceptedAuditId));
+            org.junit.jupiter.api.Assertions.assertEquals(eventsBefore, jdbcTemplate
+                .queryForObject("SELECT COUNT(*) FROM biz_channel_event WHERE tenant_id = ?", Integer.class, tenantId));
+        });
+    }
+
+    private String channelEndpointJson() {
+        EnumMap<ChannelOperation, String> paths = new EnumMap<>(ChannelOperation.class);
+        for (ChannelOperation operation : ChannelOperation.values()) {
+            paths.put(operation, "/api/" + operation.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        try {
+            return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new ChannelEndpointConfiguration("https://synthetic.invalid", paths));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String channelTimeoutJson() {
+        EnumMap<ChannelOperation, Duration> operationTimeouts = new EnumMap<>(ChannelOperation.class);
+        for (ChannelOperation operation : ChannelOperation.values()) {
+            operationTimeouts.put(operation, Duration.ofSeconds(5));
+        }
+        try {
+            return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new ChannelTimeoutPolicy(Duration.ofSeconds(1), Duration
+                    .ofSeconds(5), operationTimeouts));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String channelStatusMappingJson() {
+        ChannelOnboardingState state = new ChannelOnboardingState(ChannelStageStatus.PROCESSING, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.NOT_STARTED, ChannelStageStatus.PROCESSING);
+        try {
+            return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new ChannelStatusMapping(Map
+                    .of("PROCESSING", new ChannelMappedStatus(ChannelOperationStatus.PROCESSING, state, null, 10, false))));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String signChannelCallback(long tenantId,
+                                       ChannelProductKey product,
+                                       String configVersion,
+                                       long timestamp,
+                                       String nonce,
+                                       String keyVersion,
+                                       byte[] payload) {
+        try {
+            byte[] key = new byte[32];
+            java.util.Arrays.fill(key, (byte)2);
+            String canonical = String.join("\n", "CALLBACK", Long.toString(tenantId), product.channelCode(), product
+                .productCode(), configVersion, Long.toString(timestamp), nonce, keyVersion, sha256(payload));
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"));
+            return java.util.Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(mac.doFinal(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String callbackKeyVersion(String reference) {
+        return "ref-" + sha256(reference.getBytes(StandardCharsets.UTF_8)).substring(0, 16);
+    }
+
+    private String sha256(byte[] value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new AssertionError(ex);
+        }
     }
 
     private void insertChannelConnectionVersion(Long id,

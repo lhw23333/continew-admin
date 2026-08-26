@@ -10,6 +10,11 @@ DELETE FROM sys_role_menu WHERE role_id IN (SELECT id FROM sys_role WHERE code I
 DELETE FROM sys_user_role WHERE role_id IN (SELECT id FROM sys_role WHERE code IN ('MERCHANT_OPERATOR', 'MERCHANT_REVIEWER'));
 DELETE FROM sys_role WHERE code IN ('MERCHANT_OPERATOR', 'MERCHANT_REVIEWER');
 ALTER TABLE sys_user DROP COLUMN IF EXISTS must_change_password;
+DROP TABLE IF EXISTS biz_channel_callback_security_audit CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_channel_callback_security_audit_mutation() CASCADE;
+DROP TABLE IF EXISTS biz_channel_callback_nonce CASCADE;
+DROP TABLE IF EXISTS biz_channel_transport_audit CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_channel_transport_audit_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_security_audit CASCADE;
 DROP TABLE IF EXISTS biz_kyc_platform_attachment CASCADE;
 DROP TABLE IF EXISTS biz_kyc_operating_platform CASCADE;

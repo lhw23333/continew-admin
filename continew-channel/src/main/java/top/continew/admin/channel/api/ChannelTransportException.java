@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,5 +14,20 @@
  * limitations under the License.
  */
 
-/** Project-owned ports used to invoke payment-channel capabilities. */
 package top.continew.admin.channel.api;
+
+/** Sanitized secure-transport failure without endpoint, payload, signature, or key material. */
+public final class ChannelTransportException extends RuntimeException {
+    private final Code code;
+
+    public ChannelTransportException(Code code) {
+        super("Channel transport operation failed: " + code.name());
+        this.code = code;
+    }
+
+    public Code code() {
+        return code;
+    }
+
+    public enum Code { CONFIGURATION_UNAVAILABLE, SIGNING_FAILED, ENCRYPTION_FAILED, AUDIT_FAILED, TRANSPORT_FAILED }
+}

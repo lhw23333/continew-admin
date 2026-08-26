@@ -402,6 +402,11 @@ workflow:
       cache-ttl: 5s
       dead-letter-degraded-threshold: 0
 
+channel:
+  callback:
+    # 9.6 enables this only after verified callbacks are wired to idempotent event processing.
+    enabled: false
+
 --- ### 认证配置
 auth:
   ## 密码配置

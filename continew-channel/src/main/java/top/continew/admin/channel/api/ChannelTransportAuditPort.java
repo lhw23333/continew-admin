@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,5 +14,12 @@
  * limitations under the License.
  */
 
-/** Normalized channel commands, results, events, and status values. */
-package top.continew.admin.channel.dto;
+package top.continew.admin.channel.api;
+
+import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
+
+/** Append-only persistence boundary for payload-free channel transport evidence. */
+@FunctionalInterface
+public interface ChannelTransportAuditPort {
+    Long append(ChannelTransportAuditRecord record);
+}

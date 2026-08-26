@@ -42,7 +42,7 @@ public class SensitiveEndpointLogSanitizer {
     private static final Set<String> SENSITIVE_JSON_FIELDS = Set
         .of("password", "oldpassword", "newpassword", "paymentpassword", "credential", "secret", "secretkey", "privatekey", "token", "accesstoken", "refreshtoken", "authorization", "identitynumber", "idcard", "legalidentifier", "bankaccount", "bankaccountnumber", "accountnumber", "mobile", "mobilenumber", "phone", "reservedmobile", "kyc", "kycjson", "channelpayload", "attachmenturl");
     private static final Set<String> SENSITIVE_HEADERS = Set
-        .of("authorization", "proxyauthorization", "cookie", "setcookie", "xapikey", "xauthtoken", "xsignature", "xchannelsignature");
+        .of("authorization", "proxyauthorization", "cookie", "setcookie", "xapikey", "xauthtoken", "xsignature", "xchannelsignature", "xchannelnonce");
 
     private final ObjectMapper objectMapper;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();

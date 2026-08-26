@@ -58,6 +58,10 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/channel-connection-config.sql
   - include:
+      file: db/changelog/postgresql/merchant/channel-transport-audit.sql
+  - include:
+      file: db/changelog/postgresql/merchant/channel-callback-security.sql
+  - include:
       file: db/changelog/postgresql/merchant/agent-pricing.sql
   - include:
       file: db/changelog/postgresql/merchant/agent-defaults.sql
