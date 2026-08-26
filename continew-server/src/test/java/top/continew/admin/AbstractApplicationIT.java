@@ -32,6 +32,7 @@ import top.continew.admin.channel.api.ChannelCallbackException;
 import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
 import top.continew.admin.channel.api.ChannelEventProcessingException;
 import top.continew.admin.channel.api.ChannelTransportAuditPort;
+import top.continew.admin.channel.api.ChannelTransportException;
 import top.continew.admin.channel.service.ChannelConfigurationLoader;
 import top.continew.admin.channel.dto.ChannelBusinessType;
 import top.continew.admin.channel.dto.ChannelCommandContext;
@@ -42,6 +43,7 @@ import top.continew.admin.channel.dto.ChannelEventProcessingResult;
 import top.continew.admin.channel.dto.ChannelMappedStatus;
 import top.continew.admin.channel.dto.ChannelOnboardingState;
 import top.continew.admin.channel.dto.ChannelOperation;
+import top.continew.admin.channel.dto.ChannelOperationResiliencePolicy;
 import top.continew.admin.channel.dto.ChannelOperationStatus;
 import top.continew.admin.channel.dto.ChannelProductKey;
 import top.continew.admin.channel.dto.RawChannelCallback;
@@ -50,9 +52,11 @@ import top.continew.admin.channel.dto.ChannelStatusMapping;
 import top.continew.admin.channel.dto.ChannelTimeoutPolicy;
 import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
 import top.continew.admin.channel.dto.ChannelTransportOutcome;
+import top.continew.admin.channel.dto.ChannelTransportResponse;
 import top.continew.admin.channel.dto.VerifiedChannelCallback;
 import top.continew.admin.channel.service.ChannelCallbackVerifier;
 import top.continew.admin.channel.service.ChannelEventProcessor;
+import top.continew.admin.channel.service.SecureChannelTransport;
 import top.continew.admin.merchant.agent.application.AgentHierarchyService;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultCreateCommand;
 import top.continew.admin.merchant.agent.application.AgentMerchantDefaultService;
@@ -320,6 +324,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelTransportAuditPort channelTransportAuditPort;
+
+    @Autowired
+    private SecureChannelTransport secureChannelTransport;
 
     @Autowired
     private OnboardingDraftService onboardingDraftService;
@@ -2453,6 +2460,11 @@ abstract class AbstractApplicationIT {
             insertChannelConnectionVersion(941602L, tenantId, product, "CFG-2", objectMapper
                 .writeValueAsString(endpoints), objectMapper.writeValueAsString(timeouts), "MAP-2", objectMapper
                     .writeValueAsString(mapping), "DISABLED", baseTime.plusHours(1));
+            com.fasterxml.jackson.databind.node.ObjectNode legacyTimeouts = objectMapper.valueToTree(timeouts);
+            legacyTimeouts.remove("resiliencePolicies");
+            insertChannelConnectionVersion(941603L, tenantId, product, "CFG-LEGACY", objectMapper
+                .writeValueAsString(endpoints), objectMapper.writeValueAsString(legacyTimeouts), "MAP-LEGACY", objectMapper
+                    .writeValueAsString(mapping), "DISABLED", baseTime.plusHours(2));
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
             throw new AssertionError(ex);
         }
@@ -2460,6 +2472,13 @@ abstract class AbstractApplicationIT {
         TenantUtils.execute(tenantId, () -> {
             var exact = channelConnectionConfigCatalog.findVersion(tenantId, product, "CFG-1").orElseThrow();
             org.junit.jupiter.api.Assertions.assertEquals(ChannelConnectionStatus.ENABLED, exact.status());
+            var legacy = channelConnectionConfigCatalog.findVersion(tenantId, product, "CFG-LEGACY").orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(3, legacy.timeouts().resiliencePolicies()
+                .get(ChannelOperation.QUERY_ONBOARDING_STATUS)
+                .maxAttempts());
+            org.junit.jupiter.api.Assertions.assertEquals(1, legacy.timeouts().resiliencePolicies()
+                .get(ChannelOperation.SUBMIT_ONBOARDING)
+                .maxAttempts());
             org.junit.jupiter.api.Assertions.assertEquals("CFG-1", channelConnectionConfigCatalog
                 .findEffective(tenantId, product, baseTime.plusHours(2))
                 .orElseThrow()
@@ -2526,6 +2545,68 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals("SUCCEEDED", jdbcTemplate.queryForObject("""
                 SELECT outcome FROM biz_channel_transport_audit WHERE tenant_id = ? AND id = ?
                 """, String.class, tenantId, auditId));
+        });
+    }
+
+    protected void verifyChannelResilienceDistinguishesSafeQueriesAndUncertainCommands() {
+        long tenantId = 945L;
+        ChannelProductKey product = new ChannelProductKey("SYNTHETIC", "ONBOARDING");
+        String configVersion = "CFG-945";
+        LocalDateTime baseTime = LocalDateTime.now(java.time.ZoneOffset.UTC).minusMinutes(2);
+        insertChannelConnectionVersion(945601L, tenantId, product, configVersion, channelEndpointJson(), channelResilienceTimeoutJson(), "MAP-945", channelStatusMappingJson(), "ENABLED", baseTime);
+
+        TenantUtils.execute(tenantId, () -> {
+            ChannelCommandContext queryContext = new ChannelCommandContext(tenantId, product, configVersion, ChannelBusinessType.ONBOARDING, 945001L, 1L, "SERIAL-QUERY-945", "TRACE-QUERY-945");
+            java.util.concurrent.atomic.AtomicInteger queryCalls = new java.util.concurrent.atomic.AtomicInteger();
+            ChannelTransportResponse queryResponse = secureChannelTransport
+                .exchange(queryContext, ChannelOperation.QUERY_ONBOARDING_STATUS, "{}"
+                    .getBytes(StandardCharsets.UTF_8), (request, timeout) -> {
+                        org.junit.jupiter.api.Assertions.assertEquals(Duration.ofMillis(50), timeout);
+                        if (queryCalls.incrementAndGet() == 1) {
+                            throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
+                        }
+                        return new ChannelTransportResponse(200, "REQUEST-QUERY-945", "ok"
+                            .getBytes(StandardCharsets.UTF_8), LocalDateTime.now(java.time.ZoneOffset.UTC));
+                    });
+            org.junit.jupiter.api.Assertions.assertEquals(200, queryResponse.statusCode());
+            org.junit.jupiter.api.Assertions.assertEquals(2, queryCalls.get());
+
+            ChannelCommandContext commandContext = new ChannelCommandContext(tenantId, product, configVersion, ChannelBusinessType.ONBOARDING, 945001L, 1L, "SERIAL-COMMAND-945", "TRACE-COMMAND-945");
+            java.util.concurrent.atomic.AtomicInteger commandCalls = new java.util.concurrent.atomic.AtomicInteger();
+            ChannelTransportException uncertain = org.junit.jupiter.api.Assertions
+                .assertThrows(ChannelTransportException.class, () -> secureChannelTransport
+                    .exchange(commandContext, ChannelOperation.SUBMIT_ONBOARDING, "{}"
+                        .getBytes(StandardCharsets.UTF_8), (request, timeout) -> {
+                            commandCalls.incrementAndGet();
+                            throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
+                        }));
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelTransportException.Code.UNCERTAIN_RESULT, uncertain
+                .code());
+            org.junit.jupiter.api.Assertions.assertEquals(1, commandCalls.get());
+
+            var stored = channelConnectionConfigCatalog.findVersion(tenantId, product, configVersion).orElseThrow();
+            org.junit.jupiter.api.Assertions.assertEquals(2, stored.timeouts()
+                .resiliencePolicies()
+                .get(ChannelOperation.QUERY_ONBOARDING_STATUS)
+                .maxAttempts());
+            org.junit.jupiter.api.Assertions.assertEquals(1, stored.timeouts()
+                .resiliencePolicies()
+                .get(ChannelOperation.SUBMIT_ONBOARDING)
+                .maxAttempts());
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_transport_audit
+                WHERE tenant_id = ? AND business_serial = 'SERIAL-QUERY-945' AND outcome = 'PREPARED'
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_transport_audit
+                WHERE tenant_id = ? AND business_serial = 'SERIAL-QUERY-945' AND outcome = 'FAILED'
+                  AND failure_category = 'TIMEOUT'
+                """, Integer.class, tenantId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_channel_transport_audit
+                WHERE tenant_id = ? AND business_serial = 'SERIAL-COMMAND-945' AND outcome = 'UNCERTAIN'
+                  AND failure_category = 'UNCERTAIN_RESULT'
+                """, Integer.class, tenantId));
         });
     }
 
@@ -2852,6 +2933,25 @@ abstract class AbstractApplicationIT {
             return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
                 .writeValueAsString(new ChannelTimeoutPolicy(Duration.ofSeconds(1), Duration
                     .ofSeconds(5), operationTimeouts));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new AssertionError(ex);
+        }
+    }
+
+    private String channelResilienceTimeoutJson() {
+        EnumMap<ChannelOperation, Duration> operationTimeouts = new EnumMap<>(ChannelOperation.class);
+        EnumMap<ChannelOperation, ChannelOperationResiliencePolicy> resilience = new EnumMap<>(ChannelOperation.class);
+        for (ChannelOperation operation : ChannelOperation.values()) {
+            operationTimeouts.put(operation, Duration.ofMillis(50));
+            resilience.put(operation, ChannelOperationResiliencePolicy.defaults(operation));
+        }
+        resilience
+            .put(ChannelOperation.QUERY_ONBOARDING_STATUS, new ChannelOperationResiliencePolicy(2, Duration.ZERO, 5, Duration
+                .ofSeconds(30), 2));
+        try {
+            return applicationContext.getBean(com.fasterxml.jackson.databind.ObjectMapper.class)
+                .writeValueAsString(new ChannelTimeoutPolicy(Duration.ofMillis(50), Duration
+                    .ofMillis(50), operationTimeouts, resilience));
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
             throw new AssertionError(ex);
         }

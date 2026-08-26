@@ -17,6 +17,16 @@
 package top.continew.admin.channel.dto;
 
 public enum ChannelOperation {
-    SUBMIT_ONBOARDING, QUERY_ONBOARDING_STATUS, CREATE_SIGNING_LINK, QUERY_ACCOUNT_INFO, ADJUST_LIMIT,
-    QUERY_LIMIT_ADJUSTMENT
+    SUBMIT_ONBOARDING(false), QUERY_ONBOARDING_STATUS(true), CREATE_SIGNING_LINK(false), QUERY_ACCOUNT_INFO(true),
+    ADJUST_LIMIT(false), QUERY_LIMIT_ADJUSTMENT(true);
+
+    private final boolean safeToRetry;
+
+    ChannelOperation(boolean safeToRetry) {
+        this.safeToRetry = safeToRetry;
+    }
+
+    public boolean safeToRetry() {
+        return safeToRetry;
+    }
 }

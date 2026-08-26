@@ -139,6 +139,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelResilienceDistinguishesSafeQueriesAndUncertainCommands() {
+        verifyChannelResilienceDistinguishesSafeQueriesAndUncertainCommands();
+    }
+
+    @Test
     void channelCallbackIsAuthenticatedReplaySafeAndAudited() {
         verifyChannelCallbackIsAuthenticatedReplaySafeAndAudited();
     }

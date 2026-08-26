@@ -60,20 +60,33 @@ public class SecureChannelTransport {
 
     private final ChannelConfigurationLoader configurationLoader;
     private final ChannelTransportAuditPort auditPort;
+    private final ChannelResilienceExecutor resilienceExecutor;
     private final Clock clock;
     private final SecureRandom secureRandom;
 
     @Autowired
-    public SecureChannelTransport(ChannelConfigurationLoader configurationLoader, ChannelTransportAuditPort auditPort) {
-        this(configurationLoader, auditPort, Clock.systemUTC(), new SecureRandom());
+    public SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
+                                  ChannelTransportAuditPort auditPort,
+                                  ChannelResilienceExecutor resilienceExecutor) {
+        this(configurationLoader, auditPort, resilienceExecutor, Clock.systemUTC(), new SecureRandom());
     }
 
     SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
                            ChannelTransportAuditPort auditPort,
                            Clock clock,
                            SecureRandom secureRandom) {
+        this(configurationLoader, auditPort, new ChannelResilienceExecutor(clock, duration -> {
+        }), clock, secureRandom);
+    }
+
+    SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
+                           ChannelTransportAuditPort auditPort,
+                           ChannelResilienceExecutor resilienceExecutor,
+                           Clock clock,
+                           SecureRandom secureRandom) {
         this.configurationLoader = configurationLoader;
         this.auditPort = auditPort;
+        this.resilienceExecutor = resilienceExecutor;
         this.clock = clock;
         this.secureRandom = secureRandom;
     }
@@ -87,40 +100,88 @@ public class SecureChannelTransport {
         long startedNanos = System.nanoTime();
         try (LoadedChannelConfiguration loaded = configurationLoader.load(context.tenantId(), context.product(), context
             .configVersion(), requestTime)) {
-            ChannelOutboundRequest request;
             try {
-                request = prepare(loaded, context, operation, plaintextPayload);
+                return resilienceExecutor.execute(context, operation, loaded.config()
+                    .timeouts()
+                    .resiliencePolicies()
+                    .get(operation), attemptNumber -> exchangeAttempt(loaded, context, operation, plaintextPayload, client));
             } catch (ChannelTransportException ex) {
-                appendAudit(new ChannelTransportAuditRecord(context, operation, ChannelTransportOutcome.REJECTED, requestTime, now(), elapsed(startedNanos), null, null, null, null, ex
-                    .code()
-                    .name()));
-                throw ex;
-            }
-            appendAudit(audit(request, ChannelTransportOutcome.PREPARED, requestTime, null, null, null, null));
-            try {
-                Duration timeout = loaded.config().timeouts().operationTimeouts().get(operation);
-                ChannelTransportResponse response = client.exchange(request, timeout);
-                if (response == null) {
-                    throw new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED);
+                if (ex.code() == ChannelTransportException.Code.CIRCUIT_OPEN || ex
+                    .code() == ChannelTransportException.Code.BULKHEAD_FULL) {
+                    appendAudit(contextAudit(context, operation, ChannelTransportOutcome.REJECTED, requestTime, startedNanos, ex
+                        .code()
+                        .name()));
                 }
-                appendAudit(audit(request, ChannelTransportOutcome.SUCCEEDED, requestTime, now(), elapsed(startedNanos), response
-                    .statusCode(), null));
-                return response;
-            } catch (ChannelTransportException ex) {
-                appendAudit(audit(request, ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, ex
-                    .code()
-                    .name()));
                 throw ex;
-            } catch (RuntimeException ex) {
-                appendAudit(audit(request, ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, ChannelTransportException.Code.TRANSPORT_FAILED
-                    .name()));
-                throw new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED);
             }
         } catch (ChannelConfigurationException ex) {
-            appendAudit(new ChannelTransportAuditRecord(context, operation, ChannelTransportOutcome.REJECTED, requestTime, now(), elapsed(startedNanos), null, null, null, null, ChannelTransportException.Code.CONFIGURATION_UNAVAILABLE
+            appendAudit(contextAudit(context, operation, ChannelTransportOutcome.REJECTED, requestTime, startedNanos, ChannelTransportException.Code.CONFIGURATION_UNAVAILABLE
                 .name()));
-            throw new ChannelTransportException(ChannelTransportException.Code.CONFIGURATION_UNAVAILABLE);
+            throw new ChannelTransportException(ChannelTransportException.Code.CONFIGURATION_UNAVAILABLE, ChannelTransportException.TransmissionState.NOT_SENT);
         }
+    }
+
+    private ChannelTransportResponse exchangeAttempt(LoadedChannelConfiguration loaded,
+                                                     ChannelCommandContext context,
+                                                     ChannelOperation operation,
+                                                     byte[] plaintextPayload,
+                                                     ChannelTransportClient client) {
+        LocalDateTime requestTime = now();
+        long startedNanos = System.nanoTime();
+        ChannelOutboundRequest request;
+        try {
+            request = prepare(loaded, context, operation, plaintextPayload);
+        } catch (ChannelTransportException ex) {
+            appendAudit(contextAudit(context, operation, ChannelTransportOutcome.REJECTED, requestTime, startedNanos, ex
+                .code()
+                .name()));
+            throw ex;
+        }
+        appendAudit(audit(request, ChannelTransportOutcome.PREPARED, requestTime, null, null, null, null));
+        try {
+            Duration timeout = loaded.config().timeouts().operationTimeouts().get(operation);
+            ChannelTransportResponse response = client.exchange(request, timeout);
+            if (response == null) {
+                throw new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED, ChannelTransportException.TransmissionState.UNKNOWN);
+            }
+            appendAudit(audit(request, ChannelTransportOutcome.SUCCEEDED, requestTime, now(), elapsed(startedNanos), response
+                .statusCode(), null));
+            return response;
+        } catch (ChannelTransportException ex) {
+            ChannelTransportException effective = classify(operation, ex);
+            appendAudit(audit(request, effective.code() == ChannelTransportException.Code.UNCERTAIN_RESULT
+                ? ChannelTransportOutcome.UNCERTAIN
+                : ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, effective.code()
+                    .name()));
+            throw effective;
+        } catch (RuntimeException ex) {
+            ChannelTransportException effective = classify(operation, new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED, ChannelTransportException.TransmissionState.UNKNOWN));
+            appendAudit(audit(request, effective.code() == ChannelTransportException.Code.UNCERTAIN_RESULT
+                ? ChannelTransportOutcome.UNCERTAIN
+                : ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, effective.code()
+                    .name()));
+            throw effective;
+        }
+    }
+
+    private ChannelTransportException classify(ChannelOperation operation, ChannelTransportException exception) {
+        boolean uncertainFailure = exception.code() == ChannelTransportException.Code.TIMEOUT || exception
+            .code() == ChannelTransportException.Code.TRANSPORT_FAILED;
+        if (!operation.safeToRetry() && uncertainFailure && exception
+            .transmissionState() != ChannelTransportException.TransmissionState.NOT_SENT) {
+            return new ChannelTransportException(ChannelTransportException.Code.UNCERTAIN_RESULT, exception
+                .transmissionState());
+        }
+        return exception;
+    }
+
+    private ChannelTransportAuditRecord contextAudit(ChannelCommandContext context,
+                                                     ChannelOperation operation,
+                                                     ChannelTransportOutcome outcome,
+                                                     LocalDateTime requestTime,
+                                                     long startedNanos,
+                                                     String failureCategory) {
+        return new ChannelTransportAuditRecord(context, operation, outcome, requestTime, now(), elapsed(startedNanos), null, null, null, null, failureCategory);
     }
 
     private ChannelOutboundRequest prepare(LoadedChannelConfiguration loaded,

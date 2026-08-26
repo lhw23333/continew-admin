@@ -11,12 +11,16 @@ Every valid exchange follows this fail-closed order:
 1. load the exact effective channel configuration and resolve external secrets;
 2. prepare timestamp, nonce, correlation fields, encryption, and signature;
 3. append a sanitized `PREPARED` audit row in an independent transaction;
-4. invoke the provider client with the configured per-operation timeout; and
+4. invoke the provider client through the configured bulkhead/circuit/retry policy and per-operation timeout; and
 5. append a sanitized `SUCCEEDED` or `FAILED` result row before returning or raising an error.
 
 Configuration, cryptographic preparation, or prepared-audit failure prevents the network call. Result-audit failure
 also prevents a response from being returned to the adapter. Provider exceptions are converted to a generic
 `TRANSPORT_FAILED` category without retaining their messages.
+
+Task 9.7 further classifies transport failures by transmission certainty. A non-idempotent command that may have been
+sent is recorded as `UNCERTAIN` and is never retried automatically. Safe query retries create a fresh encrypted/signed
+envelope and a separate audit pair for every attempt.
 
 ## Authenticated request envelope
 

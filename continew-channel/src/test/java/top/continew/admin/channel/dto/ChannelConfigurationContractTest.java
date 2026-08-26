@@ -53,6 +53,26 @@ class ChannelConfigurationContractTest {
     }
 
     @Test
+    void resilienceDefaultsRetryOnlySafeQueriesAndRejectUnsafeOverrides() {
+        EnumMap<ChannelOperation, Duration> timeouts = new EnumMap<>(ChannelOperation.class);
+        EnumMap<ChannelOperation, ChannelOperationResiliencePolicy> policies = new EnumMap<>(ChannelOperation.class);
+        for (ChannelOperation operation : ChannelOperation.values()) {
+            timeouts.put(operation, Duration.ofSeconds(5));
+            policies.put(operation, ChannelOperationResiliencePolicy.defaults(operation));
+        }
+        ChannelTimeoutPolicy defaults = new ChannelTimeoutPolicy(Duration.ofSeconds(1), Duration
+            .ofSeconds(5), timeouts);
+        assertEquals(3, defaults.resiliencePolicies().get(ChannelOperation.QUERY_ONBOARDING_STATUS).maxAttempts());
+        assertEquals(1, defaults.resiliencePolicies().get(ChannelOperation.SUBMIT_ONBOARDING).maxAttempts());
+
+        policies
+            .put(ChannelOperation.SUBMIT_ONBOARDING, new ChannelOperationResiliencePolicy(2, Duration.ZERO, 5, Duration
+                .ofSeconds(30), 8));
+        assertThrows(IllegalArgumentException.class, () -> new ChannelTimeoutPolicy(Duration.ofSeconds(1), Duration
+            .ofSeconds(5), timeouts, policies));
+    }
+
+    @Test
     void loaderResolvesOnlyEffectiveVersionAndSecretsAreCloseable() {
         ChannelConnectionConfig config = config(ChannelConnectionStatus.ENABLED);
         ChannelConnectionConfigCatalog catalog = new ChannelConnectionConfigCatalog() {

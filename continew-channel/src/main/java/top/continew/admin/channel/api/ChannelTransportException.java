@@ -19,15 +19,40 @@ package top.continew.admin.channel.api;
 /** Sanitized secure-transport failure without endpoint, payload, signature, or key material. */
 public final class ChannelTransportException extends RuntimeException {
     private final Code code;
+    private final TransmissionState transmissionState;
 
     public ChannelTransportException(Code code) {
-        super("Channel transport operation failed: " + code.name());
+        this(code, TransmissionState.UNKNOWN);
+    }
+
+    public ChannelTransportException(Code code, TransmissionState transmissionState) {
+        super("Channel transport operation failed: " + safeName(code));
+        if (transmissionState == null) {
+            throw new IllegalArgumentException("Channel transport failure is invalid");
+        }
         this.code = code;
+        this.transmissionState = transmissionState;
     }
 
     public Code code() {
         return code;
     }
 
-    public enum Code { CONFIGURATION_UNAVAILABLE, SIGNING_FAILED, ENCRYPTION_FAILED, AUDIT_FAILED, TRANSPORT_FAILED }
+    public TransmissionState transmissionState() {
+        return transmissionState;
+    }
+
+    public enum TransmissionState { NOT_SENT, SENT, UNKNOWN }
+
+    public enum Code {
+        CONFIGURATION_UNAVAILABLE, SIGNING_FAILED, ENCRYPTION_FAILED, AUDIT_FAILED, TIMEOUT, CIRCUIT_OPEN,
+        BULKHEAD_FULL, TRANSPORT_FAILED, UNCERTAIN_RESULT
+    }
+
+    private static String safeName(Code code) {
+        if (code == null) {
+            throw new IllegalArgumentException("Channel transport failure is invalid");
+        }
+        return code.name();
+    }
 }

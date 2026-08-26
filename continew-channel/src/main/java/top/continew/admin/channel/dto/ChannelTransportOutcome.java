@@ -16,4 +16,4 @@
 
 package top.continew.admin.channel.dto;
 
-public enum ChannelTransportOutcome { PREPARED, SUCCEEDED, FAILED, REJECTED }
+public enum ChannelTransportOutcome { PREPARED, SUCCEEDED, FAILED, UNCERTAIN, REJECTED }

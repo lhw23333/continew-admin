@@ -145,6 +145,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelResilienceDistinguishesSafeQueriesAndUncertainCommands() {
+        verifyChannelResilienceDistinguishesSafeQueriesAndUncertainCommands();
+    }
+
+    @Test
     void channelCallbackIsAuthenticatedReplaySafeAndAudited() {
         verifyChannelCallbackIsAuthenticatedReplaySafeAndAudited();
     }

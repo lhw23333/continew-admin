@@ -152,15 +152,78 @@ class SecureChannelTransportTest {
                 throw new IllegalStateException("https://provider.invalid 91350211M000100Y43");
             }));
 
-        assertEquals(ChannelTransportException.Code.TRANSPORT_FAILED, exception.code());
+        assertEquals(ChannelTransportException.Code.UNCERTAIN_RESULT, exception.code());
         assertFalse(exception.getMessage().contains("provider.invalid"));
         assertFalse(exception.getMessage().contains("91350211M000100Y43"));
-        assertEquals(List.of(ChannelTransportOutcome.PREPARED, ChannelTransportOutcome.FAILED), audits.stream()
+        assertEquals(List.of(ChannelTransportOutcome.PREPARED, ChannelTransportOutcome.UNCERTAIN), audits.stream()
             .map(ChannelTransportAuditRecord::outcome)
             .toList());
-        assertEquals(ChannelTransportException.Code.TRANSPORT_FAILED.name(), audits.get(1).failureCategory());
+        assertEquals(ChannelTransportException.Code.UNCERTAIN_RESULT.name(), audits.get(1).failureCategory());
         assertTrue(audits.stream().noneMatch(audit -> audit.toString().contains("provider.invalid")));
         assertTrue(audits.stream().noneMatch(audit -> audit.toString().contains("91350211M000100Y43")));
+    }
+
+    @Test
+    void safeQueryRetriesWithFreshAuthenticatedEnvelope() {
+        List<ChannelTransportAuditRecord> audits = new ArrayList<>();
+        List<String> nonces = new ArrayList<>();
+        AtomicInteger clientCalls = new AtomicInteger();
+        SecureChannelTransport transport = transport(reference -> secret(reference, (byte)6), audits);
+
+        ChannelTransportResponse response = transport
+            .exchange(context(), ChannelOperation.QUERY_ONBOARDING_STATUS, PLAINTEXT, (request, timeout) -> {
+                nonces.add(request.nonce());
+                if (clientCalls.incrementAndGet() < 3) {
+                    throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
+                }
+                return new ChannelTransportResponse(200, "REQ-QUERY-934", "ok"
+                    .getBytes(StandardCharsets.UTF_8), LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+            });
+
+        assertEquals(200, response.statusCode());
+        assertEquals(3, clientCalls.get());
+        assertEquals(3, nonces.stream().distinct().count());
+        assertEquals(List
+            .of(ChannelTransportOutcome.PREPARED, ChannelTransportOutcome.FAILED, ChannelTransportOutcome.PREPARED, ChannelTransportOutcome.FAILED, ChannelTransportOutcome.PREPARED, ChannelTransportOutcome.SUCCEEDED), audits
+                .stream()
+                .map(ChannelTransportAuditRecord::outcome)
+                .toList());
+    }
+
+    @Test
+    void nonIdempotentTimeoutAfterSendIsUncertainAndNeverRetried() {
+        List<ChannelTransportAuditRecord> audits = new ArrayList<>();
+        AtomicInteger clientCalls = new AtomicInteger();
+        SecureChannelTransport transport = transport(reference -> secret(reference, (byte)8), audits);
+
+        ChannelTransportException exception = assertThrows(ChannelTransportException.class, () -> transport
+            .exchange(context(), ChannelOperation.SUBMIT_ONBOARDING, PLAINTEXT, (request, timeout) -> {
+                clientCalls.incrementAndGet();
+                throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
+            }));
+
+        assertEquals(ChannelTransportException.Code.UNCERTAIN_RESULT, exception.code());
+        assertEquals(ChannelTransportException.TransmissionState.SENT, exception.transmissionState());
+        assertEquals(1, clientCalls.get());
+        assertEquals(ChannelTransportOutcome.UNCERTAIN, audits.get(1).outcome());
+    }
+
+    @Test
+    void definitelyNotSentCommandFailureRemainsFailedWithoutRetry() {
+        List<ChannelTransportAuditRecord> audits = new ArrayList<>();
+        AtomicInteger clientCalls = new AtomicInteger();
+        SecureChannelTransport transport = transport(reference -> secret(reference, (byte)2), audits);
+
+        ChannelTransportException exception = assertThrows(ChannelTransportException.class, () -> transport
+            .exchange(context(), ChannelOperation.SUBMIT_ONBOARDING, PLAINTEXT, (request, timeout) -> {
+                clientCalls.incrementAndGet();
+                throw new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED, ChannelTransportException.TransmissionState.NOT_SENT);
+            }));
+
+        assertEquals(ChannelTransportException.Code.TRANSPORT_FAILED, exception.code());
+        assertEquals(ChannelTransportException.TransmissionState.NOT_SENT, exception.transmissionState());
+        assertEquals(1, clientCalls.get());
+        assertEquals(ChannelTransportOutcome.FAILED, audits.get(1).outcome());
     }
 
     @Test

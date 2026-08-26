@@ -22,7 +22,14 @@ import java.util.Map;
 
 /** Bounded transport and per-operation timeout policy. */
 public record ChannelTimeoutPolicy(Duration connectTimeout, Duration readTimeout,
-                                   Map<ChannelOperation, Duration> operationTimeouts) {
+                                   Map<ChannelOperation, Duration> operationTimeouts,
+                                   Map<ChannelOperation, ChannelOperationResiliencePolicy> resiliencePolicies) {
+    public ChannelTimeoutPolicy(Duration connectTimeout,
+                                Duration readTimeout,
+                                Map<ChannelOperation, Duration> operationTimeouts) {
+        this(connectTimeout, readTimeout, operationTimeouts, null);
+    }
+
     public ChannelTimeoutPolicy {
         connectTimeout = bounded(connectTimeout, "connectTimeout");
         readTimeout = bounded(readTimeout, "readTimeout");
@@ -33,6 +40,23 @@ public record ChannelTimeoutPolicy(Duration connectTimeout, Duration readTimeout
         operationTimeouts.forEach((operation, duration) -> normalized
             .put(operation, bounded(duration, "operationTimeouts")));
         operationTimeouts = Map.copyOf(normalized);
+        EnumMap<ChannelOperation, ChannelOperationResiliencePolicy> normalizedResilience = new EnumMap<>(ChannelOperation.class);
+        if (resiliencePolicies == null) {
+            for (ChannelOperation operation : ChannelOperation.values()) {
+                normalizedResilience.put(operation, ChannelOperationResiliencePolicy.defaults(operation));
+            }
+        } else {
+            if (resiliencePolicies.size() != ChannelOperation.values().length) {
+                throw ChannelContracts.invalid("resiliencePolicies");
+            }
+            resiliencePolicies.forEach((operation, policy) -> {
+                if (operation == null || policy == null || !operation.safeToRetry() && policy.maxAttempts() != 1) {
+                    throw ChannelContracts.invalid("resiliencePolicies");
+                }
+                normalizedResilience.put(operation, policy);
+            });
+        }
+        resiliencePolicies = Map.copyOf(normalizedResilience);
     }
 
     private static Duration bounded(Duration value, String name) {

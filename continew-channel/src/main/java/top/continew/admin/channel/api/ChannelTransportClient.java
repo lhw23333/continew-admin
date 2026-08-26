@@ -21,7 +21,12 @@ import top.continew.admin.channel.dto.ChannelTransportResponse;
 
 import java.time.Duration;
 
-/** Provider-specific HTTP/SDK client invoked only after secure request preparation and audit. */
+/**
+ * Provider-specific HTTP/SDK client invoked only after secure request preparation and audit.
+ *
+ * <p>The implementation must enforce the supplied deadline and report whether a timeout/transport failure happened
+ * before transmission, after transmission, or at an unknown point using {@link ChannelTransportException}.</p>
+ */
 @FunctionalInterface
 public interface ChannelTransportClient {
     ChannelTransportResponse exchange(ChannelOutboundRequest request, Duration timeout);
