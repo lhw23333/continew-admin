@@ -46,7 +46,7 @@ public final class ChannelTransportException extends RuntimeException {
 
     public enum Code {
         CONFIGURATION_UNAVAILABLE, SIGNING_FAILED, ENCRYPTION_FAILED, AUDIT_FAILED, TIMEOUT, CIRCUIT_OPEN,
-        BULKHEAD_FULL, TRANSPORT_FAILED, UNCERTAIN_RESULT
+        BULKHEAD_FULL, TRANSPORT_FAILED, UNCERTAIN_RESULT, RECOVERY_REGISTRATION_FAILED
     }
 
     private static String safeName(Code code) {

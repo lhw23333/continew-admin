@@ -38,7 +38,7 @@ the adapter without another attempt. A command failure explicitly marked `NOT_SE
 still is not automatically retried.
 
 Task 9.8 consumes uncertain commands by querying with the existing business serial or waiting for an authenticated
-callback. It must not reinterpret `UNCERTAIN_RESULT` as permission to resend.
+callback. It never reinterprets `UNCERTAIN_RESULT` as permission to resend.
 
 ## Attempt isolation and fresh authentication
 

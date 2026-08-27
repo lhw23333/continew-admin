@@ -144,6 +144,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void uncertainChannelRecoveryIsRetryableAlertedAndRepairable() {
+        verifyUncertainChannelRecoveryIsRetryableAlertedAndRepairable();
+    }
+
+    @Test
     void channelCallbackIsAuthenticatedReplaySafeAndAudited() {
         verifyChannelCallbackIsAuthenticatedReplaySafeAndAudited();
     }

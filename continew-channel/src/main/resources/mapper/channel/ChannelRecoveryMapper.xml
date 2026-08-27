@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.continew.admin.channel.adapter.ChannelRecoveryMapper">
+    <insert id="register" databaseId="mysql">
+        INSERT IGNORE INTO biz_channel_recovery
+        (id, tenant_id, channel_code, product_code, config_version, command_operation, query_operation,
+         business_type, business_id, business_version, business_serial, trace_id, status, retry_count,
+         next_retry_time, alert_status, create_time)
+        VALUES (#{id}, #{tenantId}, #{channelCode}, #{productCode}, #{configVersion}, #{commandOperation},
+         #{queryOperation}, #{businessType}, #{businessId}, #{businessVersion}, #{businessSerial}, #{traceId},
+         #{status}, #{retryCount}, #{nextRetryTime}, #{alertStatus}, #{createTime})
+    </insert>
+    <insert id="register" databaseId="pgsql">
+        INSERT INTO biz_channel_recovery
+        (id, tenant_id, channel_code, product_code, config_version, command_operation, query_operation,
+         business_type, business_id, business_version, business_serial, trace_id, status, retry_count,
+         next_retry_time, alert_status, create_time)
+        VALUES (#{id}, #{tenantId}, #{channelCode}, #{productCode}, #{configVersion}, #{commandOperation},
+         #{queryOperation}, #{businessType}, #{businessId}, #{businessVersion}, #{businessSerial}, #{traceId},
+         #{status}, #{retryCount}, #{nextRetryTime}, #{alertStatus}, #{createTime})
+        ON CONFLICT (tenant_id, channel_code, product_code, business_serial, command_operation) DO NOTHING
+    </insert>
+</mapper>

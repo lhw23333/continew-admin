@@ -36,6 +36,7 @@ import top.continew.admin.channel.dto.ChannelOperation;
 import top.continew.admin.channel.dto.ChannelOperationStatus;
 import top.continew.admin.channel.dto.ChannelOutboundRequest;
 import top.continew.admin.channel.dto.ChannelProductKey;
+import top.continew.admin.channel.dto.ChannelRecoveryDraft;
 import top.continew.admin.channel.dto.ChannelStageStatus;
 import top.continew.admin.channel.dto.ChannelStatusMapping;
 import top.continew.admin.channel.dto.ChannelTimeoutPolicy;
@@ -206,6 +207,32 @@ class SecureChannelTransportTest {
         assertEquals(ChannelTransportException.TransmissionState.SENT, exception.transmissionState());
         assertEquals(1, clientCalls.get());
         assertEquals(ChannelTransportOutcome.UNCERTAIN, audits.get(1).outcome());
+    }
+
+    @Test
+    void uncertainSubmissionRegistersPayloadFreeStatusQueryRecovery() {
+        List<ChannelTransportAuditRecord> audits = new ArrayList<>();
+        List<ChannelRecoveryDraft> recoveries = new ArrayList<>();
+        ChannelConfigurationLoader loader = loader(reference -> secret(reference, (byte)8));
+        SecureChannelTransport transport = new SecureChannelTransport(loader, record -> {
+            audits.add(record);
+            return (long)audits.size();
+        }, new ChannelResilienceExecutor(Clock.fixed(NOW, ZoneOffset.UTC), duration -> {
+        }), draft -> {
+            recoveries.add(draft);
+            return 1L;
+        }, new ChannelRecoveryPolicy(), Clock.fixed(NOW, ZoneOffset.UTC), new FixedSecureRandom());
+
+        assertThrows(ChannelTransportException.class, () -> transport
+            .exchange(context(), ChannelOperation.SUBMIT_ONBOARDING, PLAINTEXT, (request, timeout) -> {
+                throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.UNKNOWN);
+            }));
+
+        assertEquals(1, recoveries.size());
+        assertEquals(ChannelOperation.SUBMIT_ONBOARDING, recoveries.get(0).commandOperation());
+        assertEquals(ChannelOperation.QUERY_ONBOARDING_STATUS, recoveries.get(0).queryOperation());
+        assertEquals("SERIAL-934", recoveries.get(0).context().businessSerial());
+        assertFalse(recoveries.get(0).toString().contains("91350211M000100Y43"));
     }
 
     @Test

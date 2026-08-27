@@ -64,6 +64,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/channel-event-processing.sql
   - include:
+      file: db/changelog/postgresql/merchant/channel-recovery.sql
+  - include:
       file: db/changelog/postgresql/merchant/agent-pricing.sql
   - include:
       file: db/changelog/postgresql/merchant/agent-defaults.sql

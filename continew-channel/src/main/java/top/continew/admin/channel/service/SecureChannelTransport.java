@@ -19,6 +19,7 @@ package top.continew.admin.channel.service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import top.continew.admin.channel.api.ChannelConfigurationException;
+import top.continew.admin.channel.api.ChannelRecoveryRegistrationPort;
 import top.continew.admin.channel.api.ChannelSecret;
 import top.continew.admin.channel.api.ChannelTransportAuditPort;
 import top.continew.admin.channel.api.ChannelTransportClient;
@@ -28,6 +29,7 @@ import top.continew.admin.channel.dto.ChannelCommandContext;
 import top.continew.admin.channel.dto.ChannelConnectionConfig;
 import top.continew.admin.channel.dto.ChannelOperation;
 import top.continew.admin.channel.dto.ChannelOutboundRequest;
+import top.continew.admin.channel.dto.ChannelRecoveryDraft;
 import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
 import top.continew.admin.channel.dto.ChannelTransportOutcome;
 import top.continew.admin.channel.dto.ChannelTransportResponse;
@@ -61,14 +63,19 @@ public class SecureChannelTransport {
     private final ChannelConfigurationLoader configurationLoader;
     private final ChannelTransportAuditPort auditPort;
     private final ChannelResilienceExecutor resilienceExecutor;
+    private final ChannelRecoveryRegistrationPort recoveryRegistration;
+    private final ChannelRecoveryPolicy recoveryPolicy;
     private final Clock clock;
     private final SecureRandom secureRandom;
 
     @Autowired
     public SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
                                   ChannelTransportAuditPort auditPort,
-                                  ChannelResilienceExecutor resilienceExecutor) {
-        this(configurationLoader, auditPort, resilienceExecutor, Clock.systemUTC(), new SecureRandom());
+                                  ChannelResilienceExecutor resilienceExecutor,
+                                  ChannelRecoveryRegistrationPort recoveryRegistration,
+                                  ChannelRecoveryPolicy recoveryPolicy) {
+        this(configurationLoader, auditPort, resilienceExecutor, recoveryRegistration, recoveryPolicy, Clock
+            .systemUTC(), new SecureRandom());
     }
 
     SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
@@ -76,17 +83,21 @@ public class SecureChannelTransport {
                            Clock clock,
                            SecureRandom secureRandom) {
         this(configurationLoader, auditPort, new ChannelResilienceExecutor(clock, duration -> {
-        }), clock, secureRandom);
+        }), draft -> 1L, new ChannelRecoveryPolicy(), clock, secureRandom);
     }
 
     SecureChannelTransport(ChannelConfigurationLoader configurationLoader,
                            ChannelTransportAuditPort auditPort,
                            ChannelResilienceExecutor resilienceExecutor,
+                           ChannelRecoveryRegistrationPort recoveryRegistration,
+                           ChannelRecoveryPolicy recoveryPolicy,
                            Clock clock,
                            SecureRandom secureRandom) {
         this.configurationLoader = configurationLoader;
         this.auditPort = auditPort;
         this.resilienceExecutor = resilienceExecutor;
+        this.recoveryRegistration = recoveryRegistration;
+        this.recoveryPolicy = recoveryPolicy;
         this.clock = clock;
         this.secureRandom = secureRandom;
     }
@@ -153,6 +164,9 @@ public class SecureChannelTransport {
                 ? ChannelTransportOutcome.UNCERTAIN
                 : ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, effective.code()
                     .name()));
+            if (effective.code() == ChannelTransportException.Code.UNCERTAIN_RESULT) {
+                registerRecovery(context, operation);
+            }
             throw effective;
         } catch (RuntimeException ex) {
             ChannelTransportException effective = classify(operation, new ChannelTransportException(ChannelTransportException.Code.TRANSPORT_FAILED, ChannelTransportException.TransmissionState.UNKNOWN));
@@ -160,8 +174,33 @@ public class SecureChannelTransport {
                 ? ChannelTransportOutcome.UNCERTAIN
                 : ChannelTransportOutcome.FAILED, requestTime, now(), elapsed(startedNanos), null, effective.code()
                     .name()));
+            if (effective.code() == ChannelTransportException.Code.UNCERTAIN_RESULT) {
+                registerRecovery(context, operation);
+            }
             throw effective;
         }
+    }
+
+    private void registerRecovery(ChannelCommandContext context, ChannelOperation operation) {
+        LocalDateTime now = now();
+        try {
+            Long id = recoveryRegistration
+                .register(new ChannelRecoveryDraft(context, operation, queryOperation(operation), now
+                    .plus(recoveryPolicy.retryDelay(1)), now));
+            if (id == null) {
+                throw new IllegalStateException();
+            }
+        } catch (RuntimeException ex) {
+            throw new ChannelTransportException(ChannelTransportException.Code.RECOVERY_REGISTRATION_FAILED, ChannelTransportException.TransmissionState.UNKNOWN);
+        }
+    }
+
+    private ChannelOperation queryOperation(ChannelOperation operation) {
+        return switch (operation) {
+            case SUBMIT_ONBOARDING -> ChannelOperation.QUERY_ONBOARDING_STATUS;
+            case ADJUST_LIMIT -> ChannelOperation.QUERY_LIMIT_ADJUSTMENT;
+            default -> null;
+        };
     }
 
     private ChannelTransportException classify(ChannelOperation operation, ChannelTransportException exception) {
