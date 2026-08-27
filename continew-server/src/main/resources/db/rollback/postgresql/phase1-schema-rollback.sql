@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS biz_kyc_platform_attachment CASCADE;
 DROP TABLE IF EXISTS biz_kyc_operating_platform CASCADE;
 DROP FUNCTION IF EXISTS biz_prevent_security_audit_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_channel_event CASCADE;
+DROP TABLE IF EXISTS biz_limit_adjustment_policy_version CASCADE;
+DROP FUNCTION IF EXISTS biz_prevent_limit_adjustment_policy_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_limit_adjustment_history CASCADE;
 DROP FUNCTION IF EXISTS biz_prevent_limit_adjustment_history_mutation() CASCADE;
 DROP TABLE IF EXISTS biz_channel_product_version CASCADE;

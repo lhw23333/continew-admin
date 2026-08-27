@@ -70,7 +70,8 @@ public class LimitAdjustmentService {
             .longValue(), command.tenantId(), requestNo(), command.merchantId(), merchant.owningAgentId(), normalized
                 .channelCode(), normalized.platformCode(), normalized.currency(), originalLimit, normalized
                     .requestedLimit(), normalized.normalizedLimit(), normalized.reason(), eligibility
-                        .eligibilityVersion(), eligibility.channelConfigVersion(), command.actorUserId(), now);
+                        .eligibilityVersion(), eligibility.channelConfigVersion(), normalized
+                            .amountPolicyVersion(), command.actorUserId(), now);
         LimitAdjustment created;
         try {
             created = repository.insert(draft);
@@ -117,7 +118,8 @@ public class LimitAdjustmentService {
             .anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("Limit adjustment reason is invalid");
         }
-        return new NormalizedCommand(channelCode, platformCode, currency, requested, normalized, reason);
+        String amountPolicyVersion = code(command.amountPolicyVersion(), "amountPolicyVersion");
+        return new NormalizedCommand(channelCode, platformCode, currency, requested, normalized, amountPolicyVersion, reason);
     }
 
     private BigDecimal amount(BigDecimal value, String name) {
@@ -140,10 +142,10 @@ public class LimitAdjustmentService {
     }
 
     private void audit(LimitAdjustmentCreateCommand command, Merchant merchant, LimitAdjustment request) {
-        String reason = "channel=%s;platform=%s;original=%s;requested=%s;normalized=%s;eligibility=%s;config=%s"
+        String reason = "channel=%s;platform=%s;original=%s;requested=%s;normalized=%s;policy=%s;eligibility=%s;config=%s"
             .formatted(request.channelCode(), request.platformCode(), request.originalLimit(), request
-                .requestedLimit(), request.normalizedLimit(), request.eligibilityVersion(), request
-                    .channelConfigVersion());
+                .requestedLimit(), request.normalizedLimit(), request.amountPolicyVersion(), request
+                    .eligibilityVersion(), request.channelConfigVersion());
         securityAuditWriter.append(new SecurityAuditRecord(command.tenantId(), command.actorUserId(), merchant
             .owningAgentId(), "LIMIT_ADJUSTMENT_CREATE", "LIMIT_ADJUSTMENT", request.id(), request
                 .rowVersion(), null, reason, command.ipAddress(), SecurityAuditResult.SUCCESS, null, request
@@ -157,6 +159,7 @@ public class LimitAdjustmentService {
     }
 
     private record NormalizedCommand(String channelCode, String platformCode, String currency,
-                                     BigDecimal requestedLimit, BigDecimal normalizedLimit, String reason) {
+                                     BigDecimal requestedLimit, BigDecimal normalizedLimit, String amountPolicyVersion,
+                                     String reason) {
     }
 }

@@ -103,7 +103,7 @@ class LimitAdjustmentServiceTest {
     void duplicateActiveDimensionReturnsExistingWithoutSecondSideEffects() {
         LimitAdjustmentCreateResult first = service.create(command());
         LimitAdjustmentCreateResult duplicate = service
-            .create(new LimitAdjustmentCreateCommand(TENANT_ID, ACTOR_ID, MERCHANT_ID, "CHANNEL-A", "INBOUND", "CNY", new BigDecimal("3000.00"), new BigDecimal("3000.00"), "different request", "127.0.0.1"));
+            .create(new LimitAdjustmentCreateCommand(TENANT_ID, ACTOR_ID, MERCHANT_ID, "CHANNEL-A", "INBOUND", "CNY", new BigDecimal("3000.00"), new BigDecimal("3000.00"), "POLICY-V1", "different request", "127.0.0.1"));
 
         assertFalse(duplicate.created());
         assertEquals(first.request().id(), duplicate.request().id());
@@ -132,7 +132,7 @@ class LimitAdjustmentServiceTest {
     }
 
     private LimitAdjustmentCreateCommand command() {
-        return new LimitAdjustmentCreateCommand(TENANT_ID, ACTOR_ID, MERCHANT_ID, "channel-a", "inbound", "cny", new BigDecimal("1250.00"), new BigDecimal("2000.00"), "capacity expansion", "127.0.0.1");
+        return new LimitAdjustmentCreateCommand(TENANT_ID, ACTOR_ID, MERCHANT_ID, "channel-a", "inbound", "cny", new BigDecimal("1250.00"), new BigDecimal("2000.00"), "POLICY-V1", "capacity expansion", "127.0.0.1");
     }
 
     private Merchant merchant() {
@@ -218,8 +218,8 @@ class LimitAdjustmentServiceTest {
             LimitAdjustment request = new LimitAdjustment(draft.id(), draft.tenantId(), draft.requestNo(), draft
                 .merchantId(), draft.owningAgentId(), draft.channelCode(), draft.platformCode(), draft.currency(), draft
                     .originalLimit(), draft.requestedLimit(), draft.normalizedLimit(), null, draft.reason(), draft
-                        .eligibilityVersion(), draft
-                            .channelConfigVersion(), null, LimitApprovalStatus.PENDING, LimitChannelStatus.NOT_SUBMITTED, LimitEffectiveStatus.NOT_EFFECTIVE, "ACTIVE", draft
+                        .eligibilityVersion(), draft.channelConfigVersion(), draft
+                            .amountPolicyVersion(), null, LimitApprovalStatus.PENDING, LimitChannelStatus.NOT_SUBMITTED, LimitEffectiveStatus.NOT_EFFECTIVE, "ACTIVE", draft
                                 .applicantId(), draft.applicationTime(), null, null, null, null, null, 0L, draft
                                     .applicationTime(), null);
             requests.add(request);
@@ -232,8 +232,9 @@ class LimitAdjustmentServiceTest {
             history.add(new LimitAdjustmentHistory(draft.id(), request.tenantId(), request.id(), request
                 .rowVersion(), draft.action(), request.approvalStatus(), request.channelStatus(), request
                     .effectiveStatus(), request.originalLimit(), request.requestedLimit(), request
-                        .normalizedLimit(), request.effectiveLimit(), draft.actorUserId(), request.opinion(), request
-                            .channelResultCode(), request.channelResultMessage(), draft.occurredTime()));
+                        .normalizedLimit(), request.effectiveLimit(), request.amountPolicyVersion(), draft
+                            .actorUserId(), request.opinion(), request.channelResultCode(), request
+                                .channelResultMessage(), draft.occurredTime()));
         }
 
         @Override

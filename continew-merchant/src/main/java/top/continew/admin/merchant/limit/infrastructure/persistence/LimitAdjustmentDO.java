@@ -47,6 +47,7 @@ public class LimitAdjustmentDO extends TenantBaseDO {
     private String reason;
     private String eligibilityVersion;
     private String channelConfigVersion;
+    private String amountPolicyVersion;
     private String processInstanceId;
     private LimitApprovalStatus approvalStatus;
     private LimitChannelStatus channelStatus;

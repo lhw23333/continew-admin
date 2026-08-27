@@ -17,12 +17,10 @@
 package top.continew.admin.merchant.limit.application;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
-/** Atomic persistence values for a newly created limit request. */
-public record LimitAdjustmentDraft(Long id, Long tenantId, String requestNo, Long merchantId, Long owningAgentId,
-                                   String channelCode, String platformCode, String currency, BigDecimal originalLimit,
-                                   BigDecimal requestedLimit, BigDecimal normalizedLimit, String reason,
-                                   String eligibilityVersion, String channelConfigVersion, String amountPolicyVersion,
-                                   Long applicantId, LocalDateTime applicationTime) {
+/** Explicit confirmation echoes the preview version/value; the server recalculates both before creation. */
+public record LimitAdjustmentConfirmCommand(Long tenantId, Long actorUserId, Long merchantId, String channelCode,
+                                            String platformCode, String currency, BigDecimal requestedLimit,
+                                            BigDecimal confirmedNormalizedLimit, String confirmedPolicyVersion,
+                                            String reason, String ipAddress) {
 }

@@ -106,6 +106,7 @@ public class MyBatisLimitAdjustmentRepository implements LimitAdjustmentReposito
         row.setReason(draft.reason());
         row.setEligibilityVersion(draft.eligibilityVersion());
         row.setChannelConfigVersion(draft.channelConfigVersion());
+        row.setAmountPolicyVersion(draft.amountPolicyVersion());
         row.setApprovalStatus(LimitApprovalStatus.PENDING);
         row.setChannelStatus(LimitChannelStatus.NOT_SUBMITTED);
         row.setEffectiveStatus(LimitEffectiveStatus.NOT_EFFECTIVE);
@@ -142,6 +143,7 @@ public class MyBatisLimitAdjustmentRepository implements LimitAdjustmentReposito
         row.setRequestedLimit(request.requestedLimit());
         row.setNormalizedLimit(request.normalizedLimit());
         row.setEffectiveLimit(request.effectiveLimit());
+        row.setAmountPolicyVersion(request.amountPolicyVersion());
         row.setActorUserId(draft.actorUserId());
         row.setOpinion(request.opinion());
         row.setChannelResultCode(request.channelResultCode());
@@ -171,18 +173,19 @@ public class MyBatisLimitAdjustmentRepository implements LimitAdjustmentReposito
             .getOwningAgentId(), row.getChannelCode(), row.getPlatformCode(), row.getCurrency(), row
                 .getOriginalLimit(), row.getRequestedLimit(), row.getNormalizedLimit(), row.getEffectiveLimit(), row
                     .getReason(), row.getEligibilityVersion(), row.getChannelConfigVersion(), row
-                        .getProcessInstanceId(), row.getApprovalStatus(), row.getChannelStatus(), row
-                            .getEffectiveStatus(), row.getActiveRequestGuard(), row.getApplicantId(), row
-                                .getApplicationTime(), row.getApprovalTime(), row.getEffectiveTime(), row
-                                    .getOpinion(), row.getChannelResultCode(), row.getChannelResultMessage(), row
-                                        .getRowVersion(), row.getCreateTime(), row.getUpdateTime());
+                        .getAmountPolicyVersion(), row.getProcessInstanceId(), row.getApprovalStatus(), row
+                            .getChannelStatus(), row.getEffectiveStatus(), row.getActiveRequestGuard(), row
+                                .getApplicantId(), row.getApplicationTime(), row.getApprovalTime(), row
+                                    .getEffectiveTime(), row.getOpinion(), row.getChannelResultCode(), row
+                                        .getChannelResultMessage(), row.getRowVersion(), row.getCreateTime(), row
+                                            .getUpdateTime());
     }
 
     private LimitAdjustmentHistory toHistory(LimitAdjustmentHistoryDO row) {
         return new LimitAdjustmentHistory(row.getId(), row.getTenantId(), row.getRequestId(), row
             .getRequestVersion(), row.getAction(), row.getApprovalStatus(), row.getChannelStatus(), row
                 .getEffectiveStatus(), row.getOriginalLimit(), row.getRequestedLimit(), row.getNormalizedLimit(), row
-                    .getEffectiveLimit(), row.getActorUserId(), row.getOpinion(), row.getChannelResultCode(), row
-                        .getChannelResultMessage(), row.getOccurredTime());
+                    .getEffectiveLimit(), row.getAmountPolicyVersion(), row.getActorUserId(), row.getOpinion(), row
+                        .getChannelResultCode(), row.getChannelResultMessage(), row.getOccurredTime());
     }
 }

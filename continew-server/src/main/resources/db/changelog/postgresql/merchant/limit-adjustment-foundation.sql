@@ -2,7 +2,8 @@
 
 -- changeset continew:merchant-phase1-limit-adjustment-foundation-postgresql
 ALTER TABLE "biz_limit_adjustment"
-    ADD COLUMN "active_request_guard" varchar(32) DEFAULT NULL;
+    ADD COLUMN "active_request_guard" varchar(32) DEFAULT NULL,
+    ADD COLUMN "amount_policy_version" varchar(64) DEFAULT NULL;
 
 CREATE UNIQUE INDEX "uk_limit_request_no"
     ON "biz_limit_adjustment" ("tenant_id", "request_no");
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS "biz_limit_adjustment_history" (
     "requested_limit" numeric(20,2) NOT NULL,
     "normalized_limit" numeric(20,2) NOT NULL,
     "effective_limit" numeric(20,2) DEFAULT NULL,
+    "amount_policy_version" varchar(64) DEFAULT NULL,
     "actor_user_id" int8 NOT NULL,
     "opinion" varchar(2000) DEFAULT NULL,
     "channel_result_code" varchar(128) DEFAULT NULL,
@@ -69,6 +71,7 @@ BEGIN
        OR OLD.reason IS DISTINCT FROM NEW.reason
        OR OLD.eligibility_version IS DISTINCT FROM NEW.eligibility_version
        OR OLD.channel_config_version IS DISTINCT FROM NEW.channel_config_version
+       OR OLD.amount_policy_version IS DISTINCT FROM NEW.amount_policy_version
        OR OLD.applicant_id IS DISTINCT FROM NEW.applicant_id
        OR OLD.application_time IS DISTINCT FROM NEW.application_time
        OR OLD.create_time IS DISTINCT FROM NEW.create_time THEN

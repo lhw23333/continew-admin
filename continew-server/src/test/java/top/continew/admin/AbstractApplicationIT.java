@@ -169,6 +169,10 @@ import top.continew.admin.merchant.kyc.attachment.KycAttachmentValidationStatus;
 import top.continew.admin.merchant.kyc.attachment.KycVersionOwnershipRepository;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentCreateCommand;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentCreateResult;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentConfirmCommand;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentPreview;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentPreviewCommand;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentPreviewService;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentService;
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 import top.continew.admin.merchant.security.audit.application.SecurityAuditWriter;
@@ -368,6 +372,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private LimitAdjustmentService limitAdjustmentService;
+
+    @Autowired
+    private LimitAdjustmentPreviewService limitAdjustmentPreviewService;
 
     @Autowired
     private KycReuseService kycReuseService;
@@ -3402,6 +3409,14 @@ abstract class AbstractApplicationIT {
                 """, baseTime, rootUserId, baseTime);
             insertChannelProductVersion(949601L, tenantId, "CHANNEL-L", "PRODUCT-L", "ELIGIBILITY-L-1", "REQ-L-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
             insertChannelConnectionVersion(949701L, tenantId, new ChannelProductKey("CHANNEL-L", "PRODUCT-L"), "CONNECTION-L-2", channelEndpointJson(), channelResilienceTimeoutJson(), "MAP-L-1", channelStatusMappingJson(), "ENABLED", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_limit_adjustment_policy_version
+                (id, tenant_id, channel_code, platform_code, currency, policy_version, minimum_limit,
+                 maximum_limit, currency_scale, rounding_unit, rounding_mode, status, effective_time,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, 'CHANNEL-L', 'INBOUND', 'CNY', 'POLICY-L-1', 1000, 10000, 2, 1000,
+                        'CEILING', 'ENABLED', ?, ?, ?, 0)
+                """, 949702L, tenantId, baseTime, rootUserId, baseTime);
 
             OnboardingDraftView onboarding = onboardingDraftService
                 .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "PRODUCT-L", "127.0.0.1");
@@ -3413,10 +3428,12 @@ abstract class AbstractApplicationIT {
                 """, baseTime.plusDays(1), tenantId, onboarding.draft().applicationId());
             merchantMasterService.changeLifecycle(tenantId, rootUserId, merchantId, MerchantStatus.ENABLED, null, 0L);
 
-            LimitAdjustmentCreateResult created = limitAdjustmentService
-                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1250.00"), new BigDecimal("2000.00"), "Monthly capacity expansion", "127.0.0.1"));
-            LimitAdjustmentCreateResult duplicate = limitAdjustmentService
-                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("3000.00"), new BigDecimal("3000.00"), "Duplicate", "127.0.0.1"));
+            LimitAdjustmentPreview preview = limitAdjustmentPreviewService
+                .preview(new LimitAdjustmentPreviewCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1250.00")));
+            LimitAdjustmentConfirmCommand confirmation = new LimitAdjustmentConfirmCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1250.00"), preview
+                .normalizedLimit(), preview.policyVersion(), "Monthly capacity expansion", "127.0.0.1");
+            LimitAdjustmentCreateResult created = limitAdjustmentPreviewService.confirm(confirmation);
+            LimitAdjustmentCreateResult duplicate = limitAdjustmentPreviewService.confirm(confirmation);
 
             org.junit.jupiter.api.Assertions.assertTrue(created.created());
             org.junit.jupiter.api.Assertions.assertFalse(duplicate.created());
@@ -3426,6 +3443,12 @@ abstract class AbstractApplicationIT {
                 .requestedLimit());
             org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("2000.00"), created.request()
                 .normalizedLimit());
+            org.junit.jupiter.api.Assertions.assertTrue(preview.changed());
+            org.junit.jupiter.api.Assertions.assertEquals("POLICY-L-1", preview.policyVersion());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(MerchantDomainException.class, () -> limitAdjustmentPreviewService
+                    .confirm(new LimitAdjustmentConfirmCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1250.00"), new BigDecimal("3000.00"), preview
+                        .policyVersion(), "Tampered", "127.0.0.1")));
             org.junit.jupiter.api.Assertions.assertEquals("ELIGIBILITY-L-1", created.request().eligibilityVersion());
             org.junit.jupiter.api.Assertions.assertEquals("CONNECTION-L-2", created.request().channelConfigVersion());
             org.junit.jupiter.api.Assertions.assertNull(created.request().processInstanceId());
@@ -3440,10 +3463,11 @@ abstract class AbstractApplicationIT {
                 INSERT INTO biz_limit_adjustment
                 (id, tenant_id, request_no, merchant_id, owning_agent_id, channel_code, platform_code, currency,
                  original_limit, requested_limit, normalized_limit, reason, eligibility_version,
-                 channel_config_version, approval_status, channel_status, effective_status, active_request_guard,
+                 channel_config_version, amount_policy_version, approval_status, channel_status, effective_status,
+                 active_request_guard,
                  applicant_id, application_time, row_version, create_time, deleted)
                 VALUES (?, ?, ?, ?, ?, 'CHANNEL-L', 'INBOUND', 'CNY', 0, 5000, 5000, 'duplicate',
-                        'ELIGIBILITY-L-1', 'CONNECTION-L-2', 'PENDING', 'NOT_SUBMITTED', 'NOT_EFFECTIVE',
+                        'ELIGIBILITY-L-1', 'CONNECTION-L-2', 'POLICY-L-1', 'PENDING', 'NOT_SUBMITTED', 'NOT_EFFECTIVE',
                         'ACTIVE', ?, ?, 0, ?, 0)
                 """, 949801L, tenantId, "LA-DUPLICATE-949", merchantId, merchantAgentId, merchantAgentUserId, baseTime
                 .plusDays(2), baseTime.plusDays(2)));
@@ -3459,8 +3483,14 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
                 DELETE FROM biz_limit_adjustment WHERE tenant_id = ? AND id = ?
                 """, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_limit_adjustment_policy_version SET maximum_limit = 20000 WHERE tenant_id = ? AND id = ?
+                """, tenantId, 949702L));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_limit_adjustment_policy_version WHERE tenant_id = ? AND id = ?
+                """, tenantId, 949702L));
             org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> limitAdjustmentService
-                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, ineligibleMerchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1000.00"), new BigDecimal("1000.00"), "Ineligible", "127.0.0.1")));
+                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, ineligibleMerchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1000.00"), new BigDecimal("1000.00"), "POLICY-L-1", "Ineligible", "127.0.0.1")));
         });
     }
 

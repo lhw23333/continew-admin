@@ -18,6 +18,7 @@ BEGIN
        OR NOT (OLD.`reason` <=> NEW.`reason`)
        OR NOT (OLD.`eligibility_version` <=> NEW.`eligibility_version`)
        OR NOT (OLD.`channel_config_version` <=> NEW.`channel_config_version`)
+       OR NOT (OLD.`amount_policy_version` <=> NEW.`amount_policy_version`)
        OR NOT (OLD.`applicant_id` <=> NEW.`applicant_id`)
        OR NOT (OLD.`application_time` <=> NEW.`application_time`)
        OR NOT (OLD.`create_time` <=> NEW.`create_time`) THEN

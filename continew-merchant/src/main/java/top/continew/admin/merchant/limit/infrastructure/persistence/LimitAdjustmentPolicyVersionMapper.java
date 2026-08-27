@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-package top.continew.admin.merchant.limit.application;
+package top.continew.admin.merchant.limit.infrastructure.persistence;
 
-import java.math.BigDecimal;
+import org.apache.ibatis.annotations.Mapper;
+import top.continew.starter.data.mapper.BaseMapper;
 
-/** Server-normalized creation values; original limit and eligibility versions are never accepted from clients. */
-public record LimitAdjustmentCreateCommand(Long tenantId, Long actorUserId, Long merchantId, String channelCode,
-                                           String platformCode, String currency, BigDecimal requestedLimit,
-                                           BigDecimal normalizedLimit, String amountPolicyVersion, String reason,
-                                           String ipAddress) {
+@Mapper
+public interface LimitAdjustmentPolicyVersionMapper extends BaseMapper<LimitAdjustmentPolicyVersionDO> {
 }

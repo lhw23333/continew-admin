@@ -16,13 +16,17 @@
 
 package top.continew.admin.merchant.limit.application;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import top.continew.admin.merchant.limit.domain.LimitAdjustmentPolicy;
 
-/** Atomic persistence values for a newly created limit request. */
-public record LimitAdjustmentDraft(Long id, Long tenantId, String requestNo, Long merchantId, Long owningAgentId,
-                                   String channelCode, String platformCode, String currency, BigDecimal originalLimit,
-                                   BigDecimal requestedLimit, BigDecimal normalizedLimit, String reason,
-                                   String eligibilityVersion, String channelConfigVersion, String amountPolicyVersion,
-                                   Long applicantId, LocalDateTime applicationTime) {
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+@FunctionalInterface
+public interface LimitAdjustmentPolicyCatalog {
+
+    Optional<LimitAdjustmentPolicy> findEffective(Long tenantId,
+                                                  String channelCode,
+                                                  String platformCode,
+                                                  String currency,
+                                                  LocalDateTime effectiveAt);
 }

@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS biz_security_audit;
 DROP TABLE IF EXISTS biz_kyc_platform_attachment;
 DROP TABLE IF EXISTS biz_kyc_operating_platform;
 DROP TABLE IF EXISTS biz_channel_event;
+DROP TABLE IF EXISTS biz_limit_adjustment_policy_version;
 DROP TABLE IF EXISTS biz_limit_adjustment_history;
 DROP TABLE IF EXISTS biz_channel_product_version;
 DROP TABLE IF EXISTS biz_outbox_event;

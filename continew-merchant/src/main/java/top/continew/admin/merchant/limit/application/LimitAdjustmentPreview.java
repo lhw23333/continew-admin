@@ -16,13 +16,13 @@
 
 package top.continew.admin.merchant.limit.application;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import top.continew.admin.merchant.limit.domain.LimitRoundingMode;
 
-/** Atomic persistence values for a newly created limit request. */
-public record LimitAdjustmentDraft(Long id, Long tenantId, String requestNo, Long merchantId, Long owningAgentId,
-                                   String channelCode, String platformCode, String currency, BigDecimal originalLimit,
-                                   BigDecimal requestedLimit, BigDecimal normalizedLimit, String reason,
-                                   String eligibilityVersion, String channelConfigVersion, String amountPolicyVersion,
-                                   Long applicantId, LocalDateTime applicationTime) {
+import java.math.BigDecimal;
+
+/** Confirmation-safe values computed entirely from the current server policy. */
+public record LimitAdjustmentPreview(Long merchantId, String channelCode, String platformCode, String currency,
+                                     BigDecimal requestedLimit, BigDecimal normalizedLimit, boolean changed,
+                                     BigDecimal minimumLimit, BigDecimal maximumLimit, int currencyScale,
+                                     BigDecimal roundingUnit, LimitRoundingMode roundingMode, String policyVersion) {
 }

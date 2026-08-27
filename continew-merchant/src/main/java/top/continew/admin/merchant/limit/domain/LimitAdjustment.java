@@ -25,7 +25,7 @@ public record LimitAdjustment(Long id, Long tenantId, String requestNo, Long mer
                               String channelCode, String platformCode, String currency, BigDecimal originalLimit,
                               BigDecimal requestedLimit, BigDecimal normalizedLimit, BigDecimal effectiveLimit,
                               String reason, String eligibilityVersion, String channelConfigVersion,
-                              String processInstanceId, LimitApprovalStatus approvalStatus,
+                              String amountPolicyVersion, String processInstanceId, LimitApprovalStatus approvalStatus,
                               LimitChannelStatus channelStatus, LimitEffectiveStatus effectiveStatus,
                               String activeRequestGuard, Long applicantId, LocalDateTime applicationTime,
                               LocalDateTime approvalTime, LocalDateTime effectiveTime, String opinion,
@@ -53,6 +53,7 @@ public record LimitAdjustment(Long id, Long tenantId, String requestNo, Long mer
         reason = text(reason, 1000, "reason");
         eligibilityVersion = text(eligibilityVersion, 64, "eligibilityVersion");
         channelConfigVersion = text(channelConfigVersion, 64, "channelConfigVersion");
+        amountPolicyVersion = text(amountPolicyVersion, 64, "amountPolicyVersion");
         activeRequestGuard = optional(activeRequestGuard, 32);
         if (LimitEffectiveStatus.EFFECTIVE
             .equals(effectiveStatus) && (effectiveLimit == null || effectiveTime == null)) {

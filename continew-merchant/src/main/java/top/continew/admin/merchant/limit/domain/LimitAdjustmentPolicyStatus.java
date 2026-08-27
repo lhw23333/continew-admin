@@ -14,13 +14,8 @@
  * limitations under the License.
  */
 
-package top.continew.admin.merchant.limit.application;
+package top.continew.admin.merchant.limit.domain;
 
-import java.math.BigDecimal;
-
-/** Server-normalized creation values; original limit and eligibility versions are never accepted from clients. */
-public record LimitAdjustmentCreateCommand(Long tenantId, Long actorUserId, Long merchantId, String channelCode,
-                                           String platformCode, String currency, BigDecimal requestedLimit,
-                                           BigDecimal normalizedLimit, String amountPolicyVersion, String reason,
-                                           String ipAddress) {
+public enum LimitAdjustmentPolicyStatus {
+    ENABLED, DISABLED
 }

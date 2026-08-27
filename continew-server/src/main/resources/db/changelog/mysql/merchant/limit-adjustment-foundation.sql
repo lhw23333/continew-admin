@@ -3,7 +3,9 @@
 -- changeset continew:merchant-phase1-limit-adjustment-foundation-mysql
 ALTER TABLE `biz_limit_adjustment`
     ADD COLUMN `active_request_guard` varchar(32) DEFAULT NULL COMMENT '活动申请唯一保护'
-        AFTER `effective_status`;
+        AFTER `effective_status`,
+    ADD COLUMN `amount_policy_version` varchar(64) DEFAULT NULL COMMENT '金额规则版本'
+        AFTER `channel_config_version`;
 
 CREATE UNIQUE INDEX `uk_limit_request_no`
     ON `biz_limit_adjustment` (`tenant_id`, `request_no`);
@@ -25,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `biz_limit_adjustment_history` (
     `requested_limit`        decimal(20,2) NOT NULL COMMENT '输入申请限额快照',
     `normalized_limit`       decimal(20,2) NOT NULL COMMENT '规则归一化限额快照',
     `effective_limit`        decimal(20,2) DEFAULT NULL COMMENT '最终生效限额快照',
+    `amount_policy_version`  varchar(64)   DEFAULT NULL COMMENT '金额规则版本快照',
     `actor_user_id`          bigint(20)    NOT NULL COMMENT '操作人',
     `opinion`                varchar(2000) DEFAULT NULL COMMENT '已净化意见',
     `channel_result_code`    varchar(128)  DEFAULT NULL COMMENT '渠道结果码',

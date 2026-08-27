@@ -28,6 +28,7 @@ public record LimitAdjustmentHistory(Long id, Long tenantId, Long requestId, Lon
                                      LimitApprovalStatus approvalStatus, LimitChannelStatus channelStatus,
                                      LimitEffectiveStatus effectiveStatus, BigDecimal originalLimit,
                                      BigDecimal requestedLimit, BigDecimal normalizedLimit, BigDecimal effectiveLimit,
-                                     Long actorUserId, String opinion, String channelResultCode,
-                                     String channelResultMessage, LocalDateTime occurredTime) {
+                                     String amountPolicyVersion, Long actorUserId, String opinion,
+                                     String channelResultCode, String channelResultMessage,
+                                     LocalDateTime occurredTime) {
 }

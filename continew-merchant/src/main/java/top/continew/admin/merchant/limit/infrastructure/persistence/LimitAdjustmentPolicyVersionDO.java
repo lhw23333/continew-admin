@@ -18,9 +18,8 @@ package top.continew.admin.merchant.limit.infrastructure.persistence;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
-import top.continew.admin.merchant.limit.domain.LimitApprovalStatus;
-import top.continew.admin.merchant.limit.domain.LimitChannelStatus;
-import top.continew.admin.merchant.limit.domain.LimitEffectiveStatus;
+import top.continew.admin.merchant.limit.domain.LimitAdjustmentPolicyStatus;
+import top.continew.admin.merchant.limit.domain.LimitRoundingMode;
 import top.continew.starter.extension.crud.model.entity.BaseIdDO;
 
 import java.io.Serial;
@@ -28,27 +27,26 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("biz_limit_adjustment_history")
-public class LimitAdjustmentHistoryDO extends BaseIdDO {
+@TableName("biz_limit_adjustment_policy_version")
+public class LimitAdjustmentPolicyVersionDO extends BaseIdDO {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
     private Long tenantId;
-    private Long requestId;
-    private Long requestVersion;
-    private String action;
-    private LimitApprovalStatus approvalStatus;
-    private LimitChannelStatus channelStatus;
-    private LimitEffectiveStatus effectiveStatus;
-    private BigDecimal originalLimit;
-    private BigDecimal requestedLimit;
-    private BigDecimal normalizedLimit;
-    private BigDecimal effectiveLimit;
-    private String amountPolicyVersion;
-    private Long actorUserId;
-    private String opinion;
-    private String channelResultCode;
-    private String channelResultMessage;
-    private LocalDateTime occurredTime;
+    private String channelCode;
+    private String platformCode;
+    private String currency;
+    private String policyVersion;
+    private BigDecimal minimumLimit;
+    private BigDecimal maximumLimit;
+    private Integer currencyScale;
+    private BigDecimal roundingUnit;
+    private LimitRoundingMode roundingMode;
+    private LimitAdjustmentPolicyStatus status;
+    private LocalDateTime effectiveTime;
+    private LocalDateTime expiresTime;
+    private Long createUser;
+    private LocalDateTime createTime;
+    private Long deleted;
 }
