@@ -14,16 +14,11 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.limit.infrastructure.persistence;
 
-import java.time.LocalDateTime;
+import org.apache.ibatis.annotations.Mapper;
+import top.continew.starter.data.mapper.BaseMapper;
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
-    }
+@Mapper
+public interface LimitAdjustmentMapper extends BaseMapper<LimitAdjustmentDO> {
 }

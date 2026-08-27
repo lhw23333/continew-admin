@@ -57,6 +57,10 @@ flowable:
   database-schema-update: true
 
 merchant:
+  onboarding:
+    process-reference-base-url: https://integration.invalid/onboarding/action
+    process-reference-validity: PT10M
+    process-reference-qr-size: 240
   outbox:
     scheduler-enabled: false
   workflow-notification:

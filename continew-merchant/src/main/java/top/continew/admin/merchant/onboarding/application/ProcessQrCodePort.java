@@ -14,16 +14,11 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.onboarding.application;
 
-import java.time.LocalDateTime;
+/** Standards-based QR encoder boundary implemented by the server adapter. */
+@FunctionalInterface
+public interface ProcessQrCodePort {
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
-    }
+    String encodePngBase64(String content);
 }

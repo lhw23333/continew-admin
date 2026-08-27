@@ -57,6 +57,7 @@ import top.continew.admin.channel.dto.ChannelRecoveryProbeResult;
 import top.continew.admin.channel.dto.ChannelRecoveryStatus;
 import top.continew.admin.channel.dto.RawChannelCallback;
 import top.continew.admin.channel.dto.ChannelStageStatus;
+import top.continew.admin.channel.dto.ChannelSigningAction;
 import top.continew.admin.channel.dto.ChannelStatusMapping;
 import top.continew.admin.channel.dto.ChannelTimeoutPolicy;
 import top.continew.admin.channel.dto.ChannelTransportAuditRecord;
@@ -132,6 +133,9 @@ import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreview
 import top.continew.admin.merchant.onboarding.application.OnboardingFinalPreviewService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingService;
 import top.continew.admin.merchant.onboarding.application.OnboardingPricingView;
+import top.continew.admin.merchant.onboarding.application.OnboardingProcessReference;
+import top.continew.admin.merchant.onboarding.application.OnboardingProcessReferenceClaims;
+import top.continew.admin.merchant.onboarding.application.OnboardingProcessReferenceService;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionBlockedException;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionCommand;
 import top.continew.admin.merchant.onboarding.application.OnboardingSubmissionResult;
@@ -163,6 +167,9 @@ import top.continew.admin.merchant.kyc.attachment.KycAttachmentRepository;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentScanStatus;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentValidationStatus;
 import top.continew.admin.merchant.kyc.attachment.KycVersionOwnershipRepository;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentCreateCommand;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentCreateResult;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentService;
 import top.continew.admin.merchant.security.value.EncryptedMobileNumber;
 import top.continew.admin.merchant.security.audit.application.SecurityAuditWriter;
 import top.continew.admin.merchant.security.audit.domain.SecurityAuditRecord;
@@ -355,6 +362,12 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private OnboardingDraftService onboardingDraftService;
+
+    @Autowired
+    private OnboardingProcessReferenceService onboardingProcessReferenceService;
+
+    @Autowired
+    private LimitAdjustmentService limitAdjustmentService;
 
     @Autowired
     private KycReuseService kycReuseService;
@@ -3287,6 +3300,167 @@ abstract class AbstractApplicationIT {
                 SELECT COUNT(*) FROM biz_security_audit
                 WHERE tenant_id = ? AND object_id = ? AND action = 'ONBOARDING_DRAFT_SAVE'
                 """, Integer.class, tenantId, created.draft().applicationId()));
+        });
+    }
+
+    protected void verifyProcessReferencesAreBoundTamperProofAndRegenerable() {
+        long tenantId = 948L;
+        long rootAgentId = 94801L;
+        long merchantAgentId = 94802L;
+        long rootUserId = 94811L;
+        long merchantAgentUserId = 94812L;
+        long merchantId = 948101L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "REFERENCE-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "REFERENCE-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 948201L, 948202L, "REFERENCE-MERCHANT", "d"
+                    .repeat(64)));
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 9, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 948501L, 1, "CHANNEL-Z", "PRODUCT-Z", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 948401L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-Z","productCode":"PRODUCT-Z","pricingVersionId":948501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(948601L, tenantId, "CHANNEL-Z", "PRODUCT-Z", "CFG-Z-1", "REQ-Z-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+
+            OnboardingDraftView draft = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-Z", "PRODUCT-Z", "127.0.0.1");
+            Long applicationId = draft.draft().applicationId();
+            OnboardingProcessReference first = onboardingProcessReferenceService
+                .issue(tenantId, merchantAgentUserId, merchantId, applicationId, ChannelSigningAction.SIGN_AGREEMENT, "127.0.0.1");
+            OnboardingProcessReference regenerated = onboardingProcessReferenceService
+                .issue(tenantId, merchantAgentUserId, merchantId, applicationId, ChannelSigningAction.SIGN_AGREEMENT, "127.0.0.1");
+
+            org.junit.jupiter.api.Assertions.assertNotEquals(first.processUrl(), regenerated.processUrl());
+            org.junit.jupiter.api.Assertions.assertEquals("image/png", first.qrCodeMediaType());
+            org.junit.jupiter.api.Assertions.assertTrue(java.util.Base64.getDecoder()
+                .decode(first.qrCodeBase64()).length > 100);
+            org.junit.jupiter.api.Assertions.assertFalse(first.toString().contains("token="));
+            String token = first.processUrl().getQuery().substring("token=".length());
+            OnboardingProcessReferenceClaims claims = onboardingProcessReferenceService
+                .resolve(tenantId, merchantAgentUserId, merchantId, applicationId, token, "127.0.0.1");
+            org.junit.jupiter.api.Assertions.assertEquals(tenantId, claims.tenantId());
+            org.junit.jupiter.api.Assertions.assertEquals(merchantId, claims.merchantId());
+            org.junit.jupiter.api.Assertions.assertEquals(applicationId, claims.applicationId());
+            org.junit.jupiter.api.Assertions.assertEquals("CHANNEL-Z", claims.channelCode());
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelSigningAction.SIGN_AGREEMENT, claims.action());
+            org.junit.jupiter.api.Assertions
+                .assertThrows(top.continew.admin.merchant.onboarding.application.ProcessReferenceException.class, () -> onboardingProcessReferenceService
+                    .resolve(tenantId, merchantAgentUserId, merchantId + 1, applicationId, token, "127.0.0.1"));
+            org.junit.jupiter.api.Assertions.assertEquals(2, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'PROCESS_REFERENCE_ISSUE'
+                """, Integer.class, tenantId, applicationId));
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'PROCESS_REFERENCE_RESOLVE'
+                """, Integer.class, tenantId, applicationId));
+        });
+    }
+
+    protected void verifyLimitAdjustmentFoundation() {
+        long tenantId = 949L;
+        long rootAgentId = 94901L;
+        long merchantAgentId = 94902L;
+        long rootUserId = 94911L;
+        long merchantAgentUserId = 94912L;
+        long merchantId = 949101L;
+        long ineligibleMerchantId = 949102L;
+
+        TenantUtils.execute(tenantId, () -> {
+            agentHierarchyService.register(registration(rootAgentId, tenantId, 0L, rootUserId, "LIMIT-ROOT"));
+            agentHierarchyService
+                .register(registration(merchantAgentId, tenantId, rootAgentId, merchantAgentUserId, "LIMIT-MERCHANT"));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(merchantId, tenantId, merchantAgentId, 949201L, 949202L, "LIMIT-MERCHANT", "e"
+                    .repeat(64)));
+            merchantMasterService
+                .register(rootUserId, merchantRegistration(ineligibleMerchantId, tenantId, merchantAgentId, 949203L, 949204L, "LIMIT-INELIGIBLE", "f"
+                    .repeat(64)));
+
+            LocalDateTime baseTime = LocalDateTime.of(2026, 8, 20, 9, 0);
+            insertPricingVersion(tenantId, merchantAgentId, 949501L, 1, "CHANNEL-L", "PRODUCT-L", "0.01000000", baseTime);
+            jdbcTemplate.update("""
+                INSERT INTO biz_agent_merchant_default_version
+                (id, tenant_id, agent_id, version_no, default_payload_json, effective_time, status,
+                 create_user, create_time, deleted)
+                VALUES (?, ?, ?, 1, ?, ?, 'PUBLISHED', ?, ?, 0)
+                """, 949401L, tenantId, merchantAgentId, """
+                {"products":[
+                  {"channelCode":"CHANNEL-L","productCode":"PRODUCT-L","pricingVersionId":949501}
+                ]}
+                """, baseTime, rootUserId, baseTime);
+            insertChannelProductVersion(949601L, tenantId, "CHANNEL-L", "PRODUCT-L", "ELIGIBILITY-L-1", "REQ-L-1", "[\"ENTERPRISE\"]", "ENABLED", baseTime);
+            insertChannelConnectionVersion(949701L, tenantId, new ChannelProductKey("CHANNEL-L", "PRODUCT-L"), "CONNECTION-L-2", channelEndpointJson(), channelResilienceTimeoutJson(), "MAP-L-1", channelStatusMappingJson(), "ENABLED", baseTime);
+
+            OnboardingDraftView onboarding = onboardingDraftService
+                .createOrLoad(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "PRODUCT-L", "127.0.0.1");
+            jdbcTemplate.update("""
+                UPDATE biz_onboarding_application
+                SET status = 'SUCCEEDED', channel_final_status = 'SUCCEEDED', completed_time = ?,
+                    active_draft_guard = NULL
+                WHERE tenant_id = ? AND id = ?
+                """, baseTime.plusDays(1), tenantId, onboarding.draft().applicationId());
+            merchantMasterService.changeLifecycle(tenantId, rootUserId, merchantId, MerchantStatus.ENABLED, null, 0L);
+
+            LimitAdjustmentCreateResult created = limitAdjustmentService
+                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1250.00"), new BigDecimal("2000.00"), "Monthly capacity expansion", "127.0.0.1"));
+            LimitAdjustmentCreateResult duplicate = limitAdjustmentService
+                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, merchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("3000.00"), new BigDecimal("3000.00"), "Duplicate", "127.0.0.1"));
+
+            org.junit.jupiter.api.Assertions.assertTrue(created.created());
+            org.junit.jupiter.api.Assertions.assertFalse(duplicate.created());
+            org.junit.jupiter.api.Assertions.assertEquals(created.request().id(), duplicate.request().id());
+            org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("0.00"), created.request().originalLimit());
+            org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("1250.00"), created.request()
+                .requestedLimit());
+            org.junit.jupiter.api.Assertions.assertEquals(new BigDecimal("2000.00"), created.request()
+                .normalizedLimit());
+            org.junit.jupiter.api.Assertions.assertEquals("ELIGIBILITY-L-1", created.request().eligibilityVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("CONNECTION-L-2", created.request().channelConfigVersion());
+            org.junit.jupiter.api.Assertions.assertNull(created.request().processInstanceId());
+            org.junit.jupiter.api.Assertions.assertEquals(1, limitAdjustmentService
+                .history(tenantId, merchantAgentUserId, merchantId, created.request().id())
+                .size());
+            org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM biz_security_audit
+                WHERE tenant_id = ? AND object_id = ? AND action = 'LIMIT_ADJUSTMENT_CREATE'
+                """, Integer.class, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                INSERT INTO biz_limit_adjustment
+                (id, tenant_id, request_no, merchant_id, owning_agent_id, channel_code, platform_code, currency,
+                 original_limit, requested_limit, normalized_limit, reason, eligibility_version,
+                 channel_config_version, approval_status, channel_status, effective_status, active_request_guard,
+                 applicant_id, application_time, row_version, create_time, deleted)
+                VALUES (?, ?, ?, ?, ?, 'CHANNEL-L', 'INBOUND', 'CNY', 0, 5000, 5000, 'duplicate',
+                        'ELIGIBILITY-L-1', 'CONNECTION-L-2', 'PENDING', 'NOT_SUBMITTED', 'NOT_EFFECTIVE',
+                        'ACTIVE', ?, ?, 0, ?, 0)
+                """, 949801L, tenantId, "LA-DUPLICATE-949", merchantId, merchantAgentId, merchantAgentUserId, baseTime
+                .plusDays(2), baseTime.plusDays(2)));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_limit_adjustment_history SET action = 'TAMPERED' WHERE tenant_id = ? AND request_id = ?
+                """, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_limit_adjustment_history WHERE tenant_id = ? AND request_id = ?
+                """, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_limit_adjustment SET requested_limit = 9999 WHERE tenant_id = ? AND id = ?
+                """, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_limit_adjustment WHERE tenant_id = ? AND id = ?
+                """, tenantId, created.request().id()));
+            org.junit.jupiter.api.Assertions.assertThrows(MerchantDomainException.class, () -> limitAdjustmentService
+                .create(new LimitAdjustmentCreateCommand(tenantId, merchantAgentUserId, ineligibleMerchantId, "CHANNEL-L", "INBOUND", "CNY", new BigDecimal("1000.00"), new BigDecimal("1000.00"), "Ineligible", "127.0.0.1")));
         });
     }
 

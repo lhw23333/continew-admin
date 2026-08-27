@@ -114,11 +114,11 @@
 - [x] 9.7 Implement timeout/circuit-breaker/bulkhead/retry policy distinguishing safe queries from uncertain non-idempotent commands
 - [x] 9.8 Implement SnailJob polling/recovery for supported uncertain states with retry count, next retry, alert, and authorized manual repair
 - [x] 9.9 Implement channel evidence streaming or short-lived channel-scoped file access with object/hash audit
-- [ ] 9.10 Implement process QR/signing-link generation with tenant/application/action/expiry binding and tamper/expiry tests
+- [x] 9.10 Implement process QR/signing-link generation with tenant/application/action/expiry binding and tamper/expiry tests
 
 ## 10. Limit Adjustment
 
-- [ ] 10.1 Implement limit-adjustment entity, original/requested/normalized/effective values, eligibility, uniqueness, history, and audit
+- [x] 10.1 Implement limit-adjustment entity, original/requested/normalized/effective values, eligibility, uniqueness, history, and audit
 - [ ] 10.2 Implement configurable minimum/maximum/currency precision/thousand-rounding validation and confirmation preview
 - [ ] 10.3 Implement `merchant-limit-adjustment-v1` BPMN and workflow mapping for submit, approve, reject, channel submit/query, effective, and failed outcomes
 - [ ] 10.4 Implement conflict detection when effective limit or configuration changes during approval

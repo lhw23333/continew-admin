@@ -175,6 +175,16 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void processReferencesAreBoundTamperProofAndRegenerable() {
+        verifyProcessReferencesAreBoundTamperProofAndRegenerable();
+    }
+
+    @Test
+    void limitAdjustmentFoundationIsEligibleUniqueHistoricalAndAudited() {
+        verifyLimitAdjustmentFoundation();
+    }
+
+    @Test
     void historicalKycReuseIsSameMerchantAllowlistedAndRevalidated() {
         verifySameMerchantKycReuse();
     }

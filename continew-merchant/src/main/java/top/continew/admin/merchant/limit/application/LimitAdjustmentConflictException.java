@@ -14,16 +14,12 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.limit.application;
 
-import java.time.LocalDateTime;
+/** Concurrent insert lost the active-dimension uniqueness race. */
+public final class LimitAdjustmentConflictException extends RuntimeException {
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
+    public LimitAdjustmentConflictException(Throwable cause) {
+        super("Active limit adjustment already exists", cause);
     }
 }

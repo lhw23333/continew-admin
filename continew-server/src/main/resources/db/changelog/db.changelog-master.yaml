@@ -68,6 +68,10 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/channel-evidence-audit.sql
   - include:
+      file: db/changelog/mysql/merchant/limit-adjustment-foundation.sql
+  - include:
+      file: db/changelog/mysql/merchant/limit-adjustment-immutability.sql
+  - include:
       file: db/changelog/mysql/merchant/agent-pricing.sql
   - include:
       file: db/changelog/mysql/merchant/agent-defaults.sql

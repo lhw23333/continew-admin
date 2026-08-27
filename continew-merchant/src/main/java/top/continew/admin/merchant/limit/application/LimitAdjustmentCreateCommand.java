@@ -14,16 +14,12 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.limit.application;
 
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
-    }
+/** Server-normalized creation values; original limit and eligibility versions are never accepted from clients. */
+public record LimitAdjustmentCreateCommand(Long tenantId, Long actorUserId, Long merchantId, String channelCode,
+                                           String platformCode, String currency, BigDecimal requestedLimit,
+                                           BigDecimal normalizedLimit, String reason, String ipAddress) {
 }

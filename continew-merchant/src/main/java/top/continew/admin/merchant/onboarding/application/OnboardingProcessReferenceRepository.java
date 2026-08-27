@@ -14,16 +14,13 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.onboarding.application;
 
-import java.time.LocalDateTime;
+import java.util.Optional;
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
-    }
+/** Tenant/merchant/application ownership lookup independent of draft status. */
+@FunctionalInterface
+public interface OnboardingProcessReferenceRepository {
+
+    Optional<OnboardingProcessReferenceBinding> find(Long tenantId, Long merchantId, Long applicationId);
 }

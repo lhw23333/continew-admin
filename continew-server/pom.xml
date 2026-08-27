@@ -94,6 +94,16 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- 流程操作链接二维码 -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>javase</artifactId>
+        </dependency>
+
         <!-- 集成测试内存数据库（上下文冒烟测试不依赖开发机 MySQL） -->
         <dependency>
             <groupId>com.h2database</groupId>

@@ -42,6 +42,9 @@ class ChannelContractTest {
     @Test
     void signingLinkNeverRendersTheSecretUrl() {
         LocalDateTime now = LocalDateTime.of(2026, 8, 24, 12, 0);
+        ChannelSigningLinkCommand command = new ChannelSigningLinkCommand(context(ChannelBusinessType.ONBOARDING), 3L, ChannelSigningAction.SIGN_AGREEMENT, now
+            .plusMinutes(10));
+        assertEquals(3L, command.merchantId());
         ChannelSigningLinkResult result = new ChannelSigningLinkResult(meta(now), ChannelSigningAction.SIGN_AGREEMENT, "https://synthetic.example/sign?token=secret", now
             .plusMinutes(10));
         assertFalse(result.toString().contains("token=secret"));

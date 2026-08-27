@@ -87,7 +87,7 @@ class SyntheticChannelAdapterTest {
         ChannelOnboardingSubmitCommand command = onboardingCommand(101L);
         adapter.submitOnboarding(command);
         var link = adapter.createSigningLink(new ChannelSigningLinkCommand(command
-            .context(), ChannelSigningAction.SIGN_AGREEMENT, NOW.plusMinutes(10)));
+            .context(), 201L, ChannelSigningAction.SIGN_AGREEMENT, NOW.plusMinutes(10)));
         assertTrue(link.signingUrl().startsWith("https://synthetic.invalid/"));
         assertFalse(link.toString().contains("reference="));
         var account = adapter.queryAccountInfo(new ChannelAccountInfoQuery(command.context()));

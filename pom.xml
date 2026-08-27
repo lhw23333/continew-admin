@@ -52,6 +52,7 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <spring-boot-maven-plugin.version>3.3.12</spring-boot-maven-plugin.version>
         <archunit.version>1.3.0</archunit.version>
+        <zxing.version>3.5.3</zxing.version>
         <!-- Testcontainers 1.21.4 兼容 Docker Engine 29（最低 API 1.44） -->
         <testcontainers.version>1.21.4</testcontainers.version>
         <skip.unit.tests>false</skip.unit.tests>
@@ -89,6 +90,18 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+
+            <!-- 标准二维码编码/解码，避免自行实现纠错和掩码算法 -->
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>core</artifactId>
+                <version>${zxing.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.zxing</groupId>
+                <artifactId>javase</artifactId>
+                <version>${zxing.version}</version>
             </dependency>
 
             <!-- API 模块（存放 Controller 层代码，打包部署的模块） -->

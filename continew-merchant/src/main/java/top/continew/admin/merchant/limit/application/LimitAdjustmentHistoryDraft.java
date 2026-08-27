@@ -14,16 +14,13 @@
  * limitations under the License.
  */
 
-package top.continew.admin.channel.dto;
+package top.continew.admin.merchant.limit.application;
+
+import top.continew.admin.merchant.limit.domain.LimitAdjustment;
 
 import java.time.LocalDateTime;
 
-public record ChannelSigningLinkCommand(ChannelCommandContext context, Long merchantId, ChannelSigningAction action,
-                                        LocalDateTime expiresAt) {
-    public ChannelSigningLinkCommand {
-        if (context == null || context
-            .businessType() != ChannelBusinessType.ONBOARDING || action == null || expiresAt == null)
-            throw ChannelContracts.invalid("signing link command");
-        merchantId = ChannelContracts.positive(merchantId, "merchantId");
-    }
+/** Identifier and actor values added to an immutable aggregate snapshot. */
+public record LimitAdjustmentHistoryDraft(Long id, LimitAdjustment request, String action, Long actorUserId,
+                                          LocalDateTime occurredTime) {
 }

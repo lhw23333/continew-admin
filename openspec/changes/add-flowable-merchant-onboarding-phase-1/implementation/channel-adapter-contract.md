@@ -38,6 +38,10 @@ carry legal identifiers, mobile numbers, account numbers, binary evidence, perma
 objects. A later authorized orchestration service loads and decrypts only the provider-required fields in controlled
 memory.
 
+`ChannelSigningLinkCommand` carries the explicit merchant ID alongside the application business context, channel,
+intended action, and expiry. Task 9.10 wraps local process links and QR payloads in a separately signed reference and
+revalidates current database ownership when the reference is resolved.
+
 ## Normalized results
 
 `ChannelResultMeta` retains the raw provider status code, mapping version, channel request ID, business serial, config

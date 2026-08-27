@@ -38,6 +38,8 @@ class SensitiveEndpointLogSanitizerTest {
         assertNull(sanitizer.sanitizeBody("https://localhost/user/profile/password", body));
         assertNull(sanitizer.sanitizeBody("https://localhost/merchant/masters/1/sensitive/reveal", body));
         assertNull(sanitizer.sanitizeBody("https://localhost/merchant/1/kyc/versions", body));
+        assertNull(sanitizer
+            .sanitizeBody("https://localhost/merchant/merchants/1/onboarding-drafts/2/process-references", body));
         assertNull(sanitizer.sanitizeBody("https://localhost/channel/callback", body));
         assertNull(sanitizer.sanitizeBody("https://localhost/system/file/upload", body));
         assertNull(sanitizer.sanitizeBody("https://localhost/merchant/list/export", body));

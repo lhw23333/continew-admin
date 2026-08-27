@@ -38,7 +38,7 @@ public class SensitiveEndpointLogSanitizer {
 
     private static final String REDACTED = "[REDACTED]";
     private static final List<String> OMIT_BODY_PATTERNS = List
-        .of("/auth/login", "/user/profile/password", "/user/profile/phone", "/user/profile/email", "/system/user/*/password", "/merchant/**/sensitive/**", "/merchant/**/kyc/**", "/merchant/**/onboarding/**", "/merchant/**/attachment/**", "/merchant/**/attachments/**", "/merchant/**/channel/**", "/merchant/**/export", "/merchant/**/export/**", "/channel/**", "/system/file/**", "/common/file", "/file/**", "/system/user/import/**", "/**/export", "/**/export/**");
+        .of("/auth/login", "/user/profile/password", "/user/profile/phone", "/user/profile/email", "/system/user/*/password", "/merchant/**/sensitive/**", "/merchant/**/kyc/**", "/merchant/**/onboarding/**", "/merchant/**/onboarding-drafts/**", "/merchant/**/attachment/**", "/merchant/**/attachments/**", "/merchant/**/channel/**", "/merchant/**/export", "/merchant/**/export/**", "/channel/**", "/system/file/**", "/common/file", "/file/**", "/system/user/import/**", "/**/export", "/**/export/**");
     private static final Set<String> SENSITIVE_JSON_FIELDS = Set
         .of("password", "oldpassword", "newpassword", "paymentpassword", "credential", "secret", "secretkey", "privatekey", "token", "accesstoken", "refreshtoken", "authorization", "identitynumber", "idcard", "legalidentifier", "bankaccount", "bankaccountnumber", "accountnumber", "mobile", "mobilenumber", "phone", "reservedmobile", "kyc", "kycjson", "channelpayload", "attachmenturl");
     private static final Set<String> SENSITIVE_HEADERS = Set

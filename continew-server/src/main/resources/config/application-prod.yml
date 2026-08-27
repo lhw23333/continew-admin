@@ -147,6 +147,10 @@ continew-starter.encrypt.field:
 
 --- ### 商户敏感数据与渠道密钥引用
 merchant:
+  onboarding:
+    process-reference-base-url: ${MERCHANT_ONBOARDING_PROCESS_REFERENCE_BASE_URL}
+    process-reference-validity: ${MERCHANT_ONBOARDING_PROCESS_REFERENCE_VALIDITY:PT10M}
+    process-reference-qr-size: ${MERCHANT_ONBOARDING_PROCESS_REFERENCE_QR_SIZE:320}
   outbox:
     enabled: true
     scheduler-enabled: true
