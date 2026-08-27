@@ -31,6 +31,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import top.continew.admin.channel.api.ChannelCallbackException;
 import top.continew.admin.channel.api.ChannelConnectionConfigCatalog;
 import top.continew.admin.channel.api.ChannelEventProcessingException;
+import top.continew.admin.channel.api.ChannelEvidenceAuditPort;
 import top.continew.admin.channel.api.ChannelRecoveryAlertPort;
 import top.continew.admin.channel.api.ChannelRecoveryProbe;
 import top.continew.admin.channel.api.ChannelRecoveryRepository;
@@ -41,6 +42,9 @@ import top.continew.admin.channel.dto.ChannelBusinessType;
 import top.continew.admin.channel.dto.ChannelCommandContext;
 import top.continew.admin.channel.dto.ChannelConnectionStatus;
 import top.continew.admin.channel.dto.ChannelEndpointConfiguration;
+import top.continew.admin.channel.dto.ChannelEvidenceAccessMode;
+import top.continew.admin.channel.dto.ChannelEvidenceAuditOutcome;
+import top.continew.admin.channel.dto.ChannelEvidenceAuditRecord;
 import top.continew.admin.channel.dto.ChannelEventProcessingOutcome;
 import top.continew.admin.channel.dto.ChannelEventProcessingResult;
 import top.continew.admin.channel.dto.ChannelMappedStatus;
@@ -330,6 +334,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private ChannelTransportAuditPort channelTransportAuditPort;
+
+    @Autowired
+    private ChannelEvidenceAuditPort channelEvidenceAuditPort;
 
     @Autowired
     private SecureChannelTransport secureChannelTransport;
@@ -2631,6 +2638,51 @@ abstract class AbstractApplicationIT {
         });
     }
 
+    protected void verifyChannelEvidenceAuditIsHashedScopedAndAppendOnly() {
+        long tenantId = 947L;
+        long objectId = 947701L;
+        String objectSha256 = "a".repeat(64);
+        LocalDateTime createTime = LocalDateTime.of(2026, 8, 27, 14, 0);
+        ChannelCommandContext context = new ChannelCommandContext(tenantId, new ChannelProductKey("SYNTHETIC", "ONBOARDING"), "CFG-947", ChannelBusinessType.ONBOARDING, 947001L, 4L, "SERIAL-947", "TRACE-947");
+        TenantUtils.execute(tenantId, () -> {
+            Long auditId = channelEvidenceAuditPort
+                .append(new ChannelEvidenceAuditRecord(context, ChannelOperation.SUBMIT_ONBOARDING, 947501L, objectId, "BUSINESS_LICENSE", objectSha256, ChannelEvidenceAccessMode.TEMPORARY_URL, createTime
+                    .plusMinutes(5), ChannelEvidenceAuditOutcome.GRANTED, null, createTime));
+
+            org.junit.jupiter.api.Assertions.assertNotNull(auditId);
+            Map<String, Object> row = jdbcTemplate.queryForMap("""
+                SELECT * FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId);
+            org.junit.jupiter.api.Assertions.assertEquals(objectId, jdbcTemplate.queryForObject("""
+                SELECT object_id FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, Long.class, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals(objectSha256, jdbcTemplate.queryForObject("""
+                SELECT object_sha256 FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals("SERIAL-947", jdbcTemplate.queryForObject("""
+                SELECT business_serial FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+            String persistedValues = row.values().toString();
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("https://"));
+            org.junit.jupiter.api.Assertions.assertFalse(persistedValues.contains("private|kyc/"));
+            org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE LOWER(table_name) = 'biz_channel_evidence_audit'
+                  AND LOWER(column_name) IN
+                      ('url', 'temporary_url', 'storage_object_id', 'object_key', 'content', 'payload')
+                """, Integer.class));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                UPDATE biz_channel_evidence_audit SET outcome = 'DENIED' WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertThrows(DataAccessException.class, () -> jdbcTemplate.update("""
+                DELETE FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, tenantId, auditId));
+            org.junit.jupiter.api.Assertions.assertEquals("GRANTED", jdbcTemplate.queryForObject("""
+                SELECT outcome FROM biz_channel_evidence_audit WHERE tenant_id = ? AND id = ?
+                """, String.class, tenantId, auditId));
+        });
+    }
+
     protected void verifyUncertainChannelRecoveryIsRetryableAlertedAndRepairable() {
         long tenantId = 946L;
         ChannelProductKey product = new ChannelProductKey("SYNTHETIC", "ONBOARDING");
@@ -2640,25 +2692,30 @@ abstract class AbstractApplicationIT {
         org.mockito.Mockito.reset(channelRecoveryProbe, channelRecoveryAlertPort);
         org.mockito.Mockito.when(channelRecoveryProbe.supports(org.mockito.ArgumentMatchers.any())).thenReturn(true);
         org.mockito.Mockito.when(channelRecoveryProbe.probe(org.mockito.ArgumentMatchers.any()))
-            .thenReturn(ChannelRecoveryProbeResult.pending("CHANNEL_PENDING"), ChannelRecoveryProbeResult.resolved(946777L));
+            .thenReturn(ChannelRecoveryProbeResult.pending("CHANNEL_PENDING"), ChannelRecoveryProbeResult
+                .resolved(946777L));
 
         TenantUtils.execute(tenantId, () -> {
             ChannelCommandContext submit = new ChannelCommandContext(tenantId, product, configVersion, ChannelBusinessType.ONBOARDING, 946001L, 1L, "SERIAL-RECOVERY-946", "TRACE-RECOVERY-946");
             ChannelTransportException uncertain = org.junit.jupiter.api.Assertions
                 .assertThrows(ChannelTransportException.class, () -> secureChannelTransport
-                    .exchange(submit, ChannelOperation.SUBMIT_ONBOARDING, "{}"
-                        .getBytes(StandardCharsets.UTF_8), (request, timeout) -> {
-                            throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
-                        }));
+                    .exchange(submit, ChannelOperation.SUBMIT_ONBOARDING, "{}".getBytes(StandardCharsets.UTF_8), (
+                                                                                                                  request,
+                                                                                                                  timeout) -> {
+                        throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.SENT);
+                    }));
             org.junit.jupiter.api.Assertions.assertEquals(ChannelTransportException.Code.UNCERTAIN_RESULT, uncertain
                 .code());
-            var task = channelRecoveryRepository.list(tenantId, ChannelRecoveryStatus.PENDING, 10).stream()
+            var task = channelRecoveryRepository.list(tenantId, ChannelRecoveryStatus.PENDING, 10)
+                .stream()
                 .filter(value -> "SERIAL-RECOVERY-946".equals(value.context().businessSerial()))
                 .findFirst()
                 .orElseThrow();
-            org.junit.jupiter.api.Assertions.assertEquals(ChannelOperation.QUERY_ONBOARDING_STATUS, task.queryOperation());
+            org.junit.jupiter.api.Assertions.assertEquals(ChannelOperation.QUERY_ONBOARDING_STATUS, task
+                .queryOperation());
             jdbcTemplate.update("UPDATE biz_channel_recovery SET next_retry_time = ? WHERE id = ?", LocalDateTime
-                .now(java.time.ZoneOffset.UTC).minusSeconds(1), task.id());
+                .now(java.time.ZoneOffset.UTC)
+                .minusSeconds(1), task.id());
 
             var first = channelRecoveryProcessor.processTenant(tenantId);
             org.junit.jupiter.api.Assertions.assertEquals(1, first.retried());
@@ -2667,7 +2724,8 @@ abstract class AbstractApplicationIT {
             org.junit.jupiter.api.Assertions.assertEquals(1, retry.retryCount());
             org.junit.jupiter.api.Assertions.assertNotNull(retry.nextRetryTime());
             jdbcTemplate.update("UPDATE biz_channel_recovery SET next_retry_time = ? WHERE id = ?", LocalDateTime
-                .now(java.time.ZoneOffset.UTC).minusSeconds(1), task.id());
+                .now(java.time.ZoneOffset.UTC)
+                .minusSeconds(1), task.id());
 
             var second = channelRecoveryProcessor.processTenant(tenantId);
             org.junit.jupiter.api.Assertions.assertEquals(1, second.resolved());
@@ -2677,26 +2735,29 @@ abstract class AbstractApplicationIT {
 
             ChannelCommandContext signing = new ChannelCommandContext(tenantId, product, configVersion, ChannelBusinessType.ONBOARDING, 946002L, 1L, "SERIAL-SIGNING-946", "TRACE-SIGNING-946");
             org.junit.jupiter.api.Assertions.assertThrows(ChannelTransportException.class, () -> secureChannelTransport
-                .exchange(signing, ChannelOperation.CREATE_SIGNING_LINK, "{}"
-                    .getBytes(StandardCharsets.UTF_8), (request, timeout) -> {
-                        throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.UNKNOWN);
-                    }));
-            var unsupported = channelRecoveryRepository.list(tenantId, ChannelRecoveryStatus.PENDING, 10).stream()
+                .exchange(signing, ChannelOperation.CREATE_SIGNING_LINK, "{}".getBytes(StandardCharsets.UTF_8), (
+                                                                                                                 request,
+                                                                                                                 timeout) -> {
+                    throw new ChannelTransportException(ChannelTransportException.Code.TIMEOUT, ChannelTransportException.TransmissionState.UNKNOWN);
+                }));
+            var unsupported = channelRecoveryRepository.list(tenantId, ChannelRecoveryStatus.PENDING, 10)
+                .stream()
                 .filter(value -> "SERIAL-SIGNING-946".equals(value.context().businessSerial()))
                 .findFirst()
                 .orElseThrow();
             jdbcTemplate.update("UPDATE biz_channel_recovery SET next_retry_time = ? WHERE id = ?", LocalDateTime
-                .now(java.time.ZoneOffset.UTC).minusSeconds(1), unsupported.id());
+                .now(java.time.ZoneOffset.UTC)
+                .minusSeconds(1), unsupported.id());
             var third = channelRecoveryProcessor.processTenant(tenantId);
             org.junit.jupiter.api.Assertions.assertEquals(1, third.repairRequired());
             org.junit.jupiter.api.Assertions.assertEquals(1, third.alerted());
             var repair = channelRecoveryRepository.find(tenantId, unsupported.id()).orElseThrow();
             org.junit.jupiter.api.Assertions.assertEquals(ChannelRecoveryStatus.REPAIR_REQUIRED, repair.status());
             org.junit.jupiter.api.Assertions.assertEquals("SENT", repair.alertStatus());
-            org.mockito.Mockito.verify(channelRecoveryAlertPort).alert(org.mockito.ArgumentMatchers.argThat(value -> value
-                .id()
-                .equals(unsupported.id())));
-            org.junit.jupiter.api.Assertions.assertTrue(channelRecoveryProcessor.requeueRepair(tenantId, unsupported.id()));
+            org.mockito.Mockito.verify(channelRecoveryAlertPort)
+                .alert(org.mockito.ArgumentMatchers.argThat(value -> value.id().equals(unsupported.id())));
+            org.junit.jupiter.api.Assertions.assertTrue(channelRecoveryProcessor.requeueRepair(tenantId, unsupported
+                .id()));
             var requeued = channelRecoveryRepository.find(tenantId, unsupported.id()).orElseThrow();
             org.junit.jupiter.api.Assertions.assertEquals(ChannelRecoveryStatus.PENDING, requeued.status());
             org.junit.jupiter.api.Assertions.assertEquals(0, requeued.retryCount());

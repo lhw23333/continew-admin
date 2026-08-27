@@ -139,6 +139,11 @@ class MySqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelEvidenceAccessIsHashedScopedAndAppendOnly() {
+        verifyChannelEvidenceAuditIsHashedScopedAndAppendOnly();
+    }
+
+    @Test
     void channelResilienceDistinguishesSafeQueriesAndUncertainCommands() {
         verifyChannelResilienceDistinguishesSafeQueriesAndUncertainCommands();
     }

@@ -145,6 +145,11 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     }
 
     @Test
+    void channelEvidenceAccessIsHashedScopedAndAppendOnly() {
+        verifyChannelEvidenceAuditIsHashedScopedAndAppendOnly();
+    }
+
+    @Test
     void channelResilienceDistinguishesSafeQueriesAndUncertainCommands() {
         verifyChannelResilienceDistinguishesSafeQueriesAndUncertainCommands();
     }

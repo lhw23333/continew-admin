@@ -113,7 +113,7 @@
 - [x] 9.6 Implement channel event idempotency, raw-code retention, versioned normalized mapping, and out-of-order non-regression rules
 - [x] 9.7 Implement timeout/circuit-breaker/bulkhead/retry policy distinguishing safe queries from uncertain non-idempotent commands
 - [x] 9.8 Implement SnailJob polling/recovery for supported uncertain states with retry count, next retry, alert, and authorized manual repair
-- [ ] 9.9 Implement channel evidence streaming or short-lived channel-scoped file access with object/hash audit
+- [x] 9.9 Implement channel evidence streaming or short-lived channel-scoped file access with object/hash audit
 - [ ] 9.10 Implement process QR/signing-link generation with tenant/application/action/expiry binding and tamper/expiry tests
 
 ## 10. Limit Adjustment

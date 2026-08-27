@@ -66,6 +66,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/mysql/merchant/channel-recovery.sql
   - include:
+      file: db/changelog/mysql/merchant/channel-evidence-audit.sql
+  - include:
       file: db/changelog/mysql/merchant/agent-pricing.sql
   - include:
       file: db/changelog/mysql/merchant/agent-defaults.sql
