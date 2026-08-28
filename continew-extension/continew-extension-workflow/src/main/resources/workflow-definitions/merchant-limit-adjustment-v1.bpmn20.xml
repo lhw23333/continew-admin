@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="https://continew.top/workflow/merchant-limit-adjustment">
+  <process id="merchant-limit-adjustment-v1" name="Merchant Limit Adjustment V1" isExecutable="true">
+    <documentation>
+      Identifier-only routing process. Approval, channel, and effective limit state remain authoritative in domain tables.
+    </documentation>
+
+    <startEvent id="start" name="Limit Adjustment Submitted"/>
+    <sequenceFlow id="flow-start-review" sourceRef="start" targetRef="limitReviewTask"/>
+
+    <userTask id="limitReviewTask" name="Limit Adjustment Review"
+              flowable:candidateGroups="MERCHANT_REVIEWER,RISK_REVIEWER"/>
+    <sequenceFlow id="flow-review-decision" sourceRef="limitReviewTask" targetRef="reviewDecisionGateway"/>
+
+    <exclusiveGateway id="reviewDecisionGateway" name="Limit Review Decision"/>
+    <sequenceFlow id="flow-review-approved" sourceRef="reviewDecisionGateway" targetRef="channelSubmitTask">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'APPROVE'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-review-rejected" sourceRef="reviewDecisionGateway" targetRef="rejectedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${reviewAction == 'REJECT'}]]></conditionExpression>
+    </sequenceFlow>
+
+    <userTask id="channelSubmitTask" name="Submit Limit Adjustment to Channel"
+              flowable:candidateGroups="CHANNEL_OPERATIONS"/>
+    <sequenceFlow id="flow-channel-submit-result" sourceRef="channelSubmitTask" targetRef="channelResultGateway"/>
+
+    <exclusiveGateway id="channelResultGateway" name="Channel Limit Result" default="flow-channel-query"/>
+    <sequenceFlow id="flow-channel-effective" sourceRef="channelResultGateway" targetRef="effectiveEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${channelStatus == 'EFFECTIVE'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-channel-failed" sourceRef="channelResultGateway" targetRef="failedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${channelStatus == 'FAILED' || channelStatus == 'REJECTED'}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow-channel-query" sourceRef="channelResultGateway" targetRef="channelQueryTask"/>
+
+    <userTask id="channelQueryTask" name="Query Limit Adjustment Status"
+              flowable:candidateGroups="CHANNEL_OPERATIONS"/>
+    <sequenceFlow id="flow-channel-query-result" sourceRef="channelQueryTask" targetRef="channelResultGateway"/>
+
+    <endEvent id="rejectedEnd" name="Human Review Rejected"/>
+    <endEvent id="effectiveEnd" name="Limit Effective"/>
+    <endEvent id="failedEnd" name="Channel Adjustment Failed"/>
+  </process>
+</definitions>

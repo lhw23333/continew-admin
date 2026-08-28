@@ -17,6 +17,8 @@
 package top.continew.admin.merchant.limit.application;
 
 import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ import top.continew.admin.merchant.master.domain.MerchantAccessDeniedException;
 import top.continew.admin.merchant.security.audit.application.SecurityAuditWriter;
 import top.continew.admin.merchant.security.audit.domain.SecurityAuditRecord;
 import top.continew.admin.merchant.security.audit.domain.SecurityAuditResult;
+import top.continew.admin.workflow.definition.MerchantLimitAdjustmentWorkflowDefinition;
 import top.continew.starter.extension.tenant.context.TenantContextHolder;
 
 import java.math.BigDecimal;
@@ -46,6 +49,8 @@ public class LimitAdjustmentService {
     private final MerchantScopeAuthorizationService merchantScopeAuthorizationService;
     private final IdentifierGenerator identifierGenerator;
     private final SecurityAuditWriter securityAuditWriter;
+    private final LimitAdjustmentWorkflowOutboxPort workflowOutboxPort;
+    private final ObjectMapper objectMapper;
     private final Clock clock = Clock.systemDefaultZone();
 
     @Transactional
@@ -82,6 +87,7 @@ public class LimitAdjustmentService {
         }
         repository.appendHistory(new LimitAdjustmentHistoryDraft(identifierGenerator.nextId(new Object())
             .longValue(), created, "CREATE", command.actorUserId(), now));
+        enqueueWorkflow(created, command.actorUserId(), now);
         audit(command, merchant, created);
         return new LimitAdjustmentCreateResult(created, true);
     }
@@ -139,6 +145,26 @@ public class LimitAdjustmentService {
 
     private String requestNo() {
         return "LA" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT);
+    }
+
+    private void enqueueWorkflow(LimitAdjustment request, Long actorUserId, LocalDateTime now) {
+        Long businessVersion = request.rowVersion() + 1;
+        String businessKey = "%s:MERCHANT_LIMIT_ADJUSTMENT:%s:%s".formatted(request.tenantId(), request
+            .id(), businessVersion);
+        LimitAdjustmentWorkflowStartPayload payload = new LimitAdjustmentWorkflowStartPayload(request.id(), request
+            .merchantId(), request.owningAgentId(), actorUserId, businessVersion, request
+                .channelCode(), MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, businessKey);
+        workflowOutboxPort.enqueue(new LimitAdjustmentWorkflowRequestDraft(identifierGenerator.nextId(new Object())
+            .longValue(), request.tenantId(), request.id(), businessVersion, "LIMIT_WORKFLOW_START:%s:%s"
+                .formatted(request.tenantId(), request.id()), json(payload), null, now));
+    }
+
+    private String json(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("Limit adjustment workflow payload serialization failed");
+        }
     }
 
     private void audit(LimitAdjustmentCreateCommand command, Merchant merchant, LimitAdjustment request) {

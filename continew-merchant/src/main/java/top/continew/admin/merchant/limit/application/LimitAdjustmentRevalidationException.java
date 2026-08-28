@@ -16,14 +16,24 @@
 
 package top.continew.admin.merchant.limit.application;
 
-/** Concurrent insert or optimistic state transition lost its race. */
-public final class LimitAdjustmentConflictException extends RuntimeException {
+import top.continew.admin.merchant.master.domain.MerchantDomainException;
 
-    public LimitAdjustmentConflictException() {
-        super("Limit adjustment state changed concurrently");
+/** Sanitized revalidation conflict raised before final approval or channel execution. */
+public final class LimitAdjustmentRevalidationException extends MerchantDomainException {
+
+    private final Code code;
+
+    public LimitAdjustmentRevalidationException(Code code) {
+        super("Limit adjustment requires revalidation: " + code.name());
+        this.code = code;
     }
 
-    public LimitAdjustmentConflictException(Throwable cause) {
-        super("Active limit adjustment already exists", cause);
+    public Code code() {
+        return code;
+    }
+
+    public enum Code {
+        EFFECTIVE_LIMIT_CHANGED, ELIGIBILITY_CHANGED, CHANNEL_CONFIGURATION_CHANGED, AMOUNT_POLICY_CHANGED,
+        NORMALIZED_LIMIT_CHANGED
     }
 }

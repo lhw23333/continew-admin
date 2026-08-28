@@ -17,17 +17,27 @@
 package top.continew.admin.merchant.limit.application;
 
 import top.continew.admin.merchant.limit.domain.LimitAdjustment;
+import top.continew.admin.merchant.limit.domain.LimitApprovalStatus;
+import top.continew.admin.merchant.limit.domain.LimitChannelStatus;
+import top.continew.admin.merchant.limit.domain.LimitEffectiveStatus;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-/** Tenant-explicit request and append-only history persistence boundary. */
+/** Tenant-explicit request, state transition, and append-only history persistence boundary. */
 public interface LimitAdjustmentRepository {
 
     Optional<LimitAdjustment> findActive(Long tenantId, Long merchantId, String channelCode, String platformCode);
 
     Optional<LimitAdjustment> findById(Long tenantId, Long merchantId, Long requestId);
+
+    Optional<LimitAdjustment> findByRequestId(Long tenantId, Long requestId);
+
+    default LimitAdjustmentPageSlice page(Long tenantId, Long merchantId, LimitAdjustmentListQuery query) {
+        throw new UnsupportedOperationException();
+    }
 
     Optional<BigDecimal> findCurrentEffectiveLimit(Long tenantId,
                                                    Long merchantId,
@@ -36,6 +46,33 @@ public interface LimitAdjustmentRepository {
                                                    String currency);
 
     LimitAdjustment insert(LimitAdjustmentDraft draft);
+
+    LimitAdjustment bindWorkflow(Long tenantId,
+                                 Long requestId,
+                                 Long expectedVersion,
+                                 String processInstanceId,
+                                 Long actorUserId,
+                                 LocalDateTime updateTime);
+
+    LimitAdjustment applyReviewDecision(Long tenantId,
+                                        Long requestId,
+                                        Long expectedVersion,
+                                        LimitApprovalStatus approvalStatus,
+                                        String opinion,
+                                        Long actorUserId,
+                                        LocalDateTime approvalTime);
+
+    LimitAdjustment applyChannelResult(Long tenantId,
+                                       Long requestId,
+                                       Long expectedVersion,
+                                       LimitChannelStatus channelStatus,
+                                       LimitEffectiveStatus effectiveStatus,
+                                       BigDecimal effectiveLimit,
+                                       LocalDateTime effectiveTime,
+                                       String channelResultCode,
+                                       String channelResultMessage,
+                                       Long actorUserId,
+                                       LocalDateTime updateTime);
 
     void appendHistory(LimitAdjustmentHistoryDraft draft);
 

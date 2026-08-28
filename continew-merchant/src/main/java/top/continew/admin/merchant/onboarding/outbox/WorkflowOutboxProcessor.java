@@ -20,6 +20,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentWorkflowBindingService;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentWorkflowStartPayload;
 import top.continew.admin.merchant.onboarding.application.OnboardingWorkflowStartPayload;
 import top.continew.admin.workflow.api.WorkflowOperationException;
 import top.continew.admin.workflow.api.WorkflowService;
@@ -42,11 +44,13 @@ import java.util.UUID;
 public class WorkflowOutboxProcessor {
 
     public static final String WORKFLOW_START_REQUESTED = "MERCHANT_ONBOARDING_WORKFLOW_START_REQUESTED";
+    public static final String LIMIT_WORKFLOW_START_REQUESTED = "MERCHANT_LIMIT_ADJUSTMENT_WORKFLOW_START_REQUESTED";
 
     private final WorkflowOutboxRepository repository;
     private final WorkflowService workflowService;
     private final WorkflowOutboxPolicy policy;
     private final ObjectMapper objectMapper;
+    private final LimitAdjustmentWorkflowBindingService limitWorkflowBindingService;
     private final Clock clock = Clock.systemDefaultZone();
     private final String workerId = "workflow-outbox-" + UUID.randomUUID();
 
@@ -98,18 +102,13 @@ public class WorkflowOutboxProcessor {
 
     private DeliveryResult deliver(WorkflowOutboxEvent event) {
         try {
-            if (!WORKFLOW_START_REQUESTED.equals(event.eventType())) {
-                return markRepair(event, "UNSUPPORTED_EVENT", "Unsupported workflow outbox event");
+            if (WORKFLOW_START_REQUESTED.equals(event.eventType())) {
+                return deliverOnboarding(event);
             }
-            OnboardingWorkflowStartPayload payload = objectMapper.readValue(event
-                .payloadJson(), OnboardingWorkflowStartPayload.class);
-            validate(event, payload);
-            WorkflowRef workflow = workflowService.start(new StartWorkflowCommand(event.tenantId(), payload
-                .processDefinitionKey(), payload.businessKey(), variables(event, payload)));
-            String resultHeaders = resultHeaders(workflow);
-            return repository.markPublished(event.id(), workerId, resultHeaders, LocalDateTime.now(clock))
-                ? DeliveryResult.PUBLISHED
-                : DeliveryResult.REPAIR_REQUIRED;
+            if (LIMIT_WORKFLOW_START_REQUESTED.equals(event.eventType())) {
+                return deliverLimitAdjustment(event);
+            }
+            return markRepair(event, "UNSUPPORTED_EVENT", "Unsupported workflow outbox event");
         } catch (JsonProcessingException | IllegalArgumentException ex) {
             return markRepair(event, "INVALID_EVENT", "Invalid workflow outbox event");
         } catch (WorkflowOperationException ex) {
@@ -120,6 +119,34 @@ public class WorkflowOutboxProcessor {
         } catch (RuntimeException ex) {
             return markRetry(event, "UNEXPECTED", "Unexpected workflow delivery failure");
         }
+    }
+
+    private DeliveryResult deliverOnboarding(WorkflowOutboxEvent event) throws JsonProcessingException {
+        OnboardingWorkflowStartPayload payload = objectMapper.readValue(event
+            .payloadJson(), OnboardingWorkflowStartPayload.class);
+        validate(event, payload);
+        WorkflowRef workflow = workflowService.start(new StartWorkflowCommand(event.tenantId(), payload
+            .processDefinitionKey(), payload.businessKey(), variables(event, payload)));
+        return markPublished(event, workflow);
+    }
+
+    private DeliveryResult deliverLimitAdjustment(WorkflowOutboxEvent event) throws JsonProcessingException {
+        LimitAdjustmentWorkflowStartPayload payload = objectMapper.readValue(event
+            .payloadJson(), LimitAdjustmentWorkflowStartPayload.class);
+        validate(event, payload);
+        WorkflowRef workflow = workflowService.start(new StartWorkflowCommand(event.tenantId(), payload
+            .processDefinitionKey(), payload.businessKey(), variables(event, payload)));
+        limitWorkflowBindingService.bind(event.tenantId(), payload, workflow.processInstanceId(), LocalDateTime
+            .now(clock));
+        return markPublished(event, workflow);
+    }
+
+    private DeliveryResult markPublished(WorkflowOutboxEvent event,
+                                         WorkflowRef workflow) throws JsonProcessingException {
+        String resultHeaders = resultHeaders(workflow);
+        return repository.markPublished(event.id(), workerId, resultHeaders, LocalDateTime.now(clock))
+            ? DeliveryResult.PUBLISHED
+            : DeliveryResult.REPAIR_REQUIRED;
     }
 
     private void validate(WorkflowOutboxEvent event, OnboardingWorkflowStartPayload payload) {
@@ -139,6 +166,23 @@ public class WorkflowOutboxProcessor {
                 .entry("channelCode", payload.channelCode()), Map.entry("applicantId", payload.applicantId()), Map
                     .entry("owningAgentId", payload.owningAgentId()), Map.entry("riskLevel", "UNASSESSED"), Map
                         .entry("requiresSupplement", Boolean.FALSE));
+    }
+
+    private void validate(WorkflowOutboxEvent event, LimitAdjustmentWorkflowStartPayload payload) {
+        if (payload == null || !"LIMIT_ADJUSTMENT".equals(event.aggregateType()) || !event.aggregateId()
+            .equals(payload.requestId()) || !event.aggregateVersion().equals(payload.businessVersion()) || payload
+                .merchantId() == null || payload.merchantId() <= 0 || payload.owningAgentId() == null || payload
+                    .owningAgentId() <= 0 || payload.applicantId() == null || payload
+                        .applicantId() <= 0 || blank(payload.channelCode()) || blank(payload
+                            .processDefinitionKey()) || blank(payload.businessKey())) {
+            throw new IllegalArgumentException("Invalid limit workflow outbox identifiers");
+        }
+    }
+
+    private Map<String, Object> variables(WorkflowOutboxEvent event, LimitAdjustmentWorkflowStartPayload payload) {
+        return Map.ofEntries(Map.entry("tenantId", event.tenantId()), Map.entry("merchantId", payload.merchantId()), Map
+            .entry("requestId", payload.requestId()), Map.entry("channelCode", payload.channelCode()), Map
+                .entry("applicantId", payload.applicantId()), Map.entry("owningAgentId", payload.owningAgentId()));
     }
 
     private String resultHeaders(WorkflowRef workflow) throws JsonProcessingException {

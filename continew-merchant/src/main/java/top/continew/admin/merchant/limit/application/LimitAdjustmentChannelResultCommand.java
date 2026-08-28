@@ -16,14 +16,8 @@
 
 package top.continew.admin.merchant.limit.application;
 
-/** Concurrent insert or optimistic state transition lost its race. */
-public final class LimitAdjustmentConflictException extends RuntimeException {
+import top.continew.admin.channel.dto.ChannelLimitAdjustmentResult;
 
-    public LimitAdjustmentConflictException() {
-        super("Limit adjustment state changed concurrently");
-    }
-
-    public LimitAdjustmentConflictException(Throwable cause) {
-        super("Active limit adjustment already exists", cause);
-    }
+public record LimitAdjustmentChannelResultCommand(Long tenantId, Long actorUserId, String taskId, Long businessVersion,
+                                                  ChannelLimitAdjustmentResult result, String ipAddress) {
 }

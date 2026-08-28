@@ -252,6 +252,7 @@ class PostgreSqlApplicationIT extends AbstractApplicationIT {
     @Test
     void merchantOnboardingBpmnSupportsOptionalAiHumanReviewAndTimerEscalation() {
         verifyMerchantOnboardingWorkflowDefinitionAndTimer();
+        verifyMerchantLimitAdjustmentWorkflowDefinition();
     }
 
     private void assertUsesIndex(String expectedIndex, String explainSql) {

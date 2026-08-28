@@ -16,6 +16,8 @@
 
 package top.continew.admin.merchant.limit.infrastructure.persistence;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Repository;
@@ -23,6 +25,8 @@ import top.continew.admin.merchant.limit.application.LimitAdjustmentConflictExce
 import top.continew.admin.merchant.limit.application.LimitAdjustmentDraft;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentHistory;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentHistoryDraft;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentListQuery;
+import top.continew.admin.merchant.limit.application.LimitAdjustmentPageSlice;
 import top.continew.admin.merchant.limit.application.LimitAdjustmentRepository;
 import top.continew.admin.merchant.limit.domain.LimitAdjustment;
 import top.continew.admin.merchant.limit.domain.LimitApprovalStatus;
@@ -64,6 +68,52 @@ public class MyBatisLimitAdjustmentRepository implements LimitAdjustmentReposito
             .eq(LimitAdjustmentDO::getId, requestId)
             .eq(LimitAdjustmentDO::getDeleted, 0L)
             .one()).map(this::toDomain);
+    }
+
+    @Override
+    public Optional<LimitAdjustment> findByRequestId(Long tenantId, Long requestId) {
+        return Optional.ofNullable(requestMapper.lambdaQuery()
+            .eq(LimitAdjustmentDO::getTenantId, tenantId)
+            .eq(LimitAdjustmentDO::getId, requestId)
+            .eq(LimitAdjustmentDO::getDeleted, 0L)
+            .one()).map(this::toDomain);
+    }
+
+    @Override
+    public LimitAdjustmentPageSlice page(Long tenantId, Long merchantId, LimitAdjustmentListQuery query) {
+        var wrapper = requestMapper.lambdaQuery()
+            .eq(LimitAdjustmentDO::getTenantId, tenantId)
+            .eq(LimitAdjustmentDO::getMerchantId, merchantId)
+            .eq(LimitAdjustmentDO::getDeleted, 0L);
+        if (query.requestNo() != null) {
+            wrapper.like(LimitAdjustmentDO::getRequestNo, query.requestNo());
+        }
+        if (query.channelCode() != null) {
+            wrapper.eq(LimitAdjustmentDO::getChannelCode, query.channelCode().toUpperCase(java.util.Locale.ROOT));
+        }
+        if (query.platformCode() != null) {
+            wrapper.eq(LimitAdjustmentDO::getPlatformCode, query.platformCode().toUpperCase(java.util.Locale.ROOT));
+        }
+        if (query.approvalStatus() != null) {
+            wrapper.eq(LimitAdjustmentDO::getApprovalStatus, query.approvalStatus());
+        }
+        if (query.channelStatus() != null) {
+            wrapper.eq(LimitAdjustmentDO::getChannelStatus, query.channelStatus());
+        }
+        if (query.effectiveStatus() != null) {
+            wrapper.eq(LimitAdjustmentDO::getEffectiveStatus, query.effectiveStatus());
+        }
+        if (query.appliedFrom() != null) {
+            wrapper.ge(LimitAdjustmentDO::getApplicationTime, query.appliedFrom());
+        }
+        if (query.appliedTo() != null) {
+            wrapper.le(LimitAdjustmentDO::getApplicationTime, query.appliedTo());
+        }
+        IPage<LimitAdjustmentDO> result = wrapper.orderByDesc(LimitAdjustmentDO::getApplicationTime)
+            .orderByDesc(LimitAdjustmentDO::getId)
+            .page(new Page<>(query.page(), query.size()));
+        return new LimitAdjustmentPageSlice(result.getRecords().stream().map(this::toDomain).toList(), result
+            .getTotal());
     }
 
     @Override
@@ -125,6 +175,99 @@ public class MyBatisLimitAdjustmentRepository implements LimitAdjustmentReposito
             throw new LimitAdjustmentConflictException(ex);
         }
         return toDomain(row);
+    }
+
+    @Override
+    public LimitAdjustment bindWorkflow(Long tenantId,
+                                        Long requestId,
+                                        Long expectedVersion,
+                                        String processInstanceId,
+                                        Long actorUserId,
+                                        java.time.LocalDateTime updateTime) {
+        boolean updated = requestMapper.lambdaUpdate()
+            .eq(LimitAdjustmentDO::getTenantId, tenantId)
+            .eq(LimitAdjustmentDO::getId, requestId)
+            .eq(LimitAdjustmentDO::getRowVersion, expectedVersion)
+            .isNull(LimitAdjustmentDO::getProcessInstanceId)
+            .eq(LimitAdjustmentDO::getDeleted, 0L)
+            .set(LimitAdjustmentDO::getProcessInstanceId, processInstanceId)
+            .set(LimitAdjustmentDO::getRowVersion, expectedVersion + 1)
+            .set(LimitAdjustmentDO::getUpdateUser, actorUserId)
+            .set(LimitAdjustmentDO::getUpdateTime, updateTime)
+            .update();
+        LimitAdjustment current = findByRequestId(tenantId, requestId)
+            .orElseThrow(LimitAdjustmentConflictException::new);
+        if (!updated && !processInstanceId.equals(current.processInstanceId())) {
+            throw new LimitAdjustmentConflictException();
+        }
+        return current;
+    }
+
+    @Override
+    public LimitAdjustment applyReviewDecision(Long tenantId,
+                                               Long requestId,
+                                               Long expectedVersion,
+                                               LimitApprovalStatus approvalStatus,
+                                               String opinion,
+                                               Long actorUserId,
+                                               java.time.LocalDateTime approvalTime) {
+        var update = requestMapper.lambdaUpdate()
+            .eq(LimitAdjustmentDO::getTenantId, tenantId)
+            .eq(LimitAdjustmentDO::getId, requestId)
+            .eq(LimitAdjustmentDO::getRowVersion, expectedVersion)
+            .eq(LimitAdjustmentDO::getApprovalStatus, LimitApprovalStatus.PENDING)
+            .eq(LimitAdjustmentDO::getDeleted, 0L)
+            .set(LimitAdjustmentDO::getApprovalStatus, approvalStatus)
+            .set(LimitAdjustmentDO::getApprovalTime, approvalTime)
+            .set(LimitAdjustmentDO::getOpinion, opinion)
+            .set(LimitAdjustmentDO::getRowVersion, expectedVersion + 1)
+            .set(LimitAdjustmentDO::getUpdateUser, actorUserId)
+            .set(LimitAdjustmentDO::getUpdateTime, approvalTime);
+        if (LimitApprovalStatus.REJECTED.equals(approvalStatus)) {
+            update.set(LimitAdjustmentDO::getActiveRequestGuard, null);
+        }
+        if (!update.update()) {
+            throw new LimitAdjustmentConflictException();
+        }
+        return findByRequestId(tenantId, requestId).orElseThrow(LimitAdjustmentConflictException::new);
+    }
+
+    @Override
+    public LimitAdjustment applyChannelResult(Long tenantId,
+                                              Long requestId,
+                                              Long expectedVersion,
+                                              LimitChannelStatus channelStatus,
+                                              LimitEffectiveStatus effectiveStatus,
+                                              BigDecimal effectiveLimit,
+                                              java.time.LocalDateTime effectiveTime,
+                                              String channelResultCode,
+                                              String channelResultMessage,
+                                              Long actorUserId,
+                                              java.time.LocalDateTime updateTime) {
+        var update = requestMapper.lambdaUpdate()
+            .eq(LimitAdjustmentDO::getTenantId, tenantId)
+            .eq(LimitAdjustmentDO::getId, requestId)
+            .eq(LimitAdjustmentDO::getRowVersion, expectedVersion)
+            .eq(LimitAdjustmentDO::getApprovalStatus, LimitApprovalStatus.APPROVED)
+            .eq(LimitAdjustmentDO::getEffectiveStatus, LimitEffectiveStatus.NOT_EFFECTIVE)
+            .eq(LimitAdjustmentDO::getDeleted, 0L)
+            .set(LimitAdjustmentDO::getChannelStatus, channelStatus)
+            .set(LimitAdjustmentDO::getEffectiveStatus, effectiveStatus)
+            .set(LimitAdjustmentDO::getEffectiveLimit, effectiveLimit)
+            .set(LimitAdjustmentDO::getEffectiveTime, effectiveTime)
+            .set(LimitAdjustmentDO::getChannelResultCode, channelResultCode)
+            .set(LimitAdjustmentDO::getChannelResultMessage, channelResultMessage)
+            .set(LimitAdjustmentDO::getRowVersion, expectedVersion + 1)
+            .set(LimitAdjustmentDO::getUpdateUser, actorUserId)
+            .set(LimitAdjustmentDO::getUpdateTime, updateTime);
+        if (LimitEffectiveStatus.EFFECTIVE.equals(effectiveStatus) || LimitChannelStatus.FAILED
+            .equals(channelStatus) || LimitChannelStatus.REJECTED.equals(channelStatus)) {
+            update.set(LimitAdjustmentDO::getActiveRequestGuard, null);
+        }
+        if (!update.update()) {
+            throw new LimitAdjustmentConflictException();
+        }
+        return findByRequestId(tenantId, requestId).orElseThrow(LimitAdjustmentConflictException::new);
     }
 
     @Override

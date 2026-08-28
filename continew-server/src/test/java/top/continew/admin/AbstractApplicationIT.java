@@ -207,6 +207,7 @@ import top.continew.admin.workflow.command.CompleteTaskCommand;
 import top.continew.admin.workflow.command.DeployWorkflowCommand;
 import top.continew.admin.workflow.command.StartWorkflowCommand;
 import top.continew.admin.workflow.command.UnclaimTaskCommand;
+import top.continew.admin.workflow.definition.MerchantLimitAdjustmentWorkflowDefinition;
 import top.continew.admin.workflow.definition.MerchantOnboardingReviewWorkflowDefinition;
 import top.continew.admin.workflow.dto.WorkflowDefinitionContract;
 import top.continew.admin.workflow.dto.WorkflowDeploymentRef;
@@ -261,6 +262,9 @@ abstract class AbstractApplicationIT {
 
     @Autowired
     private MerchantOnboardingReviewWorkflowDefinition merchantOnboardingReviewWorkflowDefinition;
+
+    @Autowired
+    private MerchantLimitAdjustmentWorkflowDefinition merchantLimitAdjustmentWorkflowDefinition;
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
@@ -602,6 +606,90 @@ abstract class AbstractApplicationIT {
             SELECT COUNT(*) FROM biz_workflow_deployment
             WHERE tenant_id = ? AND process_definition_key = ?
             """, Integer.class, tenantId, processKey));
+    }
+
+    protected void verifyMerchantLimitAdjustmentWorkflowDefinition() {
+        long tenantId = 950L;
+        long actorUserId = 95001L;
+        String tenant = String.valueOf(tenantId);
+        WorkflowDeploymentRef deployment = workflowDeploymentService.deploy(merchantLimitAdjustmentWorkflowDefinition
+            .deploymentCommand(tenantId, actorUserId));
+        try {
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, deployment.processDefinitionKey());
+            org.junit.jupiter.api.Assertions
+                .assertEquals(MerchantLimitAdjustmentWorkflowDefinition.CONTRACT_VERSION, deployment.contractVersion());
+
+            Map<String, Object> variables = Map
+                .of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950201L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
+            org.flowable.engine.runtime.ProcessInstance effective = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, "950:MERCHANT_LIMIT_ADJUSTMENT:950201:1", variables, tenant);
+            org.flowable.task.api.Task review = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(effective.getId())
+                .singleResult();
+            org.junit.jupiter.api.Assertions.assertEquals("limitReviewTask", review.getTaskDefinitionKey());
+            processEngine.getTaskService().complete(review.getId(), Map.of("reviewAction", "APPROVE"));
+            org.flowable.task.api.Task submit = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(effective.getId())
+                .singleResult();
+            org.junit.jupiter.api.Assertions.assertEquals("channelSubmitTask", submit.getTaskDefinitionKey());
+            processEngine.getTaskService().complete(submit.getId(), Map.of("channelStatus", "PROCESSING"));
+            org.flowable.task.api.Task query = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(effective.getId())
+                .singleResult();
+            org.junit.jupiter.api.Assertions.assertEquals("channelQueryTask", query.getTaskDefinitionKey());
+            processEngine.getTaskService().complete(query.getId(), Map.of("channelStatus", "EFFECTIVE"));
+            org.junit.jupiter.api.Assertions.assertNull(processEngine.getRuntimeService()
+                .createProcessInstanceQuery()
+                .processInstanceId(effective.getId())
+                .singleResult());
+            org.junit.jupiter.api.Assertions.assertEquals(1, processEngine.getHistoryService()
+                .createHistoricActivityInstanceQuery()
+                .processInstanceId(effective.getId())
+                .activityId("effectiveEnd")
+                .finished()
+                .count());
+
+            Map<String, Object> rejectedVariables = Map.of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950202L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
+            org.flowable.engine.runtime.ProcessInstance rejected = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, "950:MERCHANT_LIMIT_ADJUSTMENT:950202:1", rejectedVariables, tenant);
+            org.flowable.task.api.Task rejectedReview = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(rejected.getId())
+                .singleResult();
+            processEngine.getTaskService().complete(rejectedReview.getId(), Map.of("reviewAction", "REJECT"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, processEngine.getHistoryService()
+                .createHistoricActivityInstanceQuery()
+                .processInstanceId(rejected.getId())
+                .activityId("rejectedEnd")
+                .finished()
+                .count());
+
+            Map<String, Object> failedVariables = Map.of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950203L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
+            org.flowable.engine.runtime.ProcessInstance failed = processEngine.getRuntimeService()
+                .startProcessInstanceByKeyAndTenantId(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, "950:MERCHANT_LIMIT_ADJUSTMENT:950203:1", failedVariables, tenant);
+            org.flowable.task.api.Task failedReview = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(failed.getId())
+                .singleResult();
+            processEngine.getTaskService().complete(failedReview.getId(), Map.of("reviewAction", "APPROVE"));
+            org.flowable.task.api.Task failedSubmit = processEngine.getTaskService()
+                .createTaskQuery()
+                .processInstanceId(failed.getId())
+                .singleResult();
+            processEngine.getTaskService().complete(failedSubmit.getId(), Map.of("channelStatus", "FAILED"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, processEngine.getHistoryService()
+                .createHistoricActivityInstanceQuery()
+                .processInstanceId(failed.getId())
+                .activityId("failedEnd")
+                .finished()
+                .count());
+        } finally {
+            processEngine.getRepositoryService().deleteDeployment(deployment.deploymentId(), true);
+        }
     }
 
     protected void verifyMerchantOnboardingWorkflowDefinitionAndTimer() {

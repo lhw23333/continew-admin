@@ -16,14 +16,9 @@
 
 package top.continew.admin.merchant.limit.application;
 
-/** Concurrent insert or optimistic state transition lost its race. */
-public final class LimitAdjustmentConflictException extends RuntimeException {
+/** Persists a sanitized workflow-start event in the transaction that creates the request. */
+@FunctionalInterface
+public interface LimitAdjustmentWorkflowOutboxPort {
 
-    public LimitAdjustmentConflictException() {
-        super("Limit adjustment state changed concurrently");
-    }
-
-    public LimitAdjustmentConflictException(Throwable cause) {
-        super("Active limit adjustment already exists", cause);
-    }
+    void enqueue(LimitAdjustmentWorkflowRequestDraft draft);
 }

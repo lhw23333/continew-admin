@@ -156,7 +156,7 @@ class LimitAdjustmentPreviewServiceTest {
         private LimitAdjustmentCreateCommand command;
 
         private CapturingAdjustmentService() {
-            super(null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
         }
 
         @Override

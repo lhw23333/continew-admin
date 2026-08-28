@@ -37,6 +37,7 @@ class WorkflowVariablePolicyTest {
         variables.put("tenantId", 1001L);
         variables.put("merchantId", 2001L);
         variables.put("applicationId", 3001L);
+        variables.put("requestId", 3002L);
         variables.put("kycVersion", 4L);
         variables.put("channelCode", "GRG_PAY-01");
         variables.put("applicantId", 4001L);
@@ -44,12 +45,13 @@ class WorkflowVariablePolicyTest {
         variables.put("riskLevel", "MEDIUM_RISK");
         variables.put("requiresSupplement", Boolean.FALSE);
         variables.put("reviewAction", "APPROVE");
+        variables.put("channelStatus", "PROCESSING");
 
         Map<String, Object> validated = policy.validateAndCopy(variables);
 
         assertEquals(variables, validated);
         assertThrows(UnsupportedOperationException.class, () -> validated.put("tenantId", 2L));
-        assertEquals(10, policy.allowedNames().size());
+        assertEquals(12, policy.allowedNames().size());
     }
 
     @Test
@@ -84,6 +86,8 @@ class WorkflowVariablePolicyTest {
             .of("requiresSupplement", "false")));
         assertThrows(InvalidWorkflowVariableException.class, () -> policy.validateAndCopy(Map
             .of("riskLevel", "medium")));
+        assertThrows(InvalidWorkflowVariableException.class, () -> policy.validateAndCopy(Map
+            .of("channelStatus", "SUCCEEDED")));
         assertThrows(InvalidWorkflowVariableException.class, () -> policy.validateAndCopy(Map.of("unknown", 1L)));
         assertTrue(policy.validateAndCopy(Map.of()).isEmpty());
     }

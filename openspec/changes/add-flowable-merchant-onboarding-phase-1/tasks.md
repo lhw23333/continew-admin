@@ -120,10 +120,10 @@
 
 - [x] 10.1 Implement limit-adjustment entity, original/requested/normalized/effective values, eligibility, uniqueness, history, and audit
 - [x] 10.2 Implement configurable minimum/maximum/currency precision/thousand-rounding validation and confirmation preview
-- [ ] 10.3 Implement `merchant-limit-adjustment-v1` BPMN and workflow mapping for submit, approve, reject, channel submit/query, effective, and failed outcomes
-- [ ] 10.4 Implement conflict detection when effective limit or configuration changes during approval
-- [ ] 10.5 Implement scoped list/detail/history APIs and Vue create/history/review views
-- [ ] 10.6 Add tests proving human approval alone does not make a limit effective before required channel confirmation
+- [x] 10.3 Implement `merchant-limit-adjustment-v1` BPMN and workflow mapping for submit, approve, reject, channel submit/query, effective, and failed outcomes
+- [x] 10.4 Implement conflict detection when effective limit or configuration changes during approval
+- [x] 10.5 Implement scoped list/detail/history APIs and Vue create/history/review views
+- [x] 10.6 Add tests proving human approval alone does not make a limit effective before required channel confirmation
 
 ## 11. Operations Workbench and Observability
 

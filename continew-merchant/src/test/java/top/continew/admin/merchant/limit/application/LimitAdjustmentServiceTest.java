@@ -17,6 +17,7 @@
 package top.continew.admin.merchant.limit.application;
 
 import com.baomidou.mybatisplus.core.incrementer.IdentifierGenerator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,7 @@ class LimitAdjustmentServiceTest {
     private InMemoryRepository repository;
     private MutableEligibility eligibility;
     private InMemoryAuditRepository auditRepository;
+    private List<LimitAdjustmentWorkflowRequestDraft> workflowRequests;
     private LimitAdjustmentService service;
 
     @BeforeEach
@@ -67,9 +69,10 @@ class LimitAdjustmentServiceTest {
         repository = new InMemoryRepository();
         eligibility = new MutableEligibility();
         auditRepository = new InMemoryAuditRepository();
+        workflowRequests = new ArrayList<>();
         AtomicLong ids = new AtomicLong(10_000);
         IdentifierGenerator identifierGenerator = entity -> ids.incrementAndGet();
-        service = new LimitAdjustmentService(repository, eligibility, new AllowingAuthorization(merchant()), identifierGenerator, new SecurityAuditWriter(auditRepository));
+        service = new LimitAdjustmentService(repository, eligibility, new AllowingAuthorization(merchant()), identifierGenerator, new SecurityAuditWriter(auditRepository), workflowRequests::add, new ObjectMapper());
     }
 
     @AfterEach
@@ -97,6 +100,9 @@ class LimitAdjustmentServiceTest {
         assertEquals(0L, repository.history.get(0).requestVersion());
         assertEquals("LIMIT_ADJUSTMENT_CREATE", auditRepository.records.get(0).action());
         assertFalse(auditRepository.records.get(0).reason().contains("capacity expansion"));
+        assertEquals(1, workflowRequests.size());
+        assertEquals(result.request().id(), workflowRequests.get(0).requestId());
+        assertFalse(workflowRequests.get(0).payloadJson().contains("capacity expansion"));
     }
 
     @Test
@@ -205,6 +211,13 @@ class LimitAdjustmentServiceTest {
         }
 
         @Override
+        public Optional<LimitAdjustment> findByRequestId(Long tenantId, Long requestId) {
+            return requests.stream()
+                .filter(item -> item.tenantId().equals(tenantId) && item.id().equals(requestId))
+                .findFirst();
+        }
+
+        @Override
         public Optional<BigDecimal> findCurrentEffectiveLimit(Long tenantId,
                                                               Long merchantId,
                                                               String channelCode,
@@ -224,6 +237,42 @@ class LimitAdjustmentServiceTest {
                                     .applicationTime(), null);
             requests.add(request);
             return request;
+        }
+
+        @Override
+        public LimitAdjustment bindWorkflow(Long tenantId,
+                                            Long requestId,
+                                            Long expectedVersion,
+                                            String processInstanceId,
+                                            Long actorUserId,
+                                            LocalDateTime updateTime) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public LimitAdjustment applyReviewDecision(Long tenantId,
+                                                   Long requestId,
+                                                   Long expectedVersion,
+                                                   top.continew.admin.merchant.limit.domain.LimitApprovalStatus approvalStatus,
+                                                   String opinion,
+                                                   Long actorUserId,
+                                                   LocalDateTime approvalTime) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public LimitAdjustment applyChannelResult(Long tenantId,
+                                                  Long requestId,
+                                                  Long expectedVersion,
+                                                  top.continew.admin.merchant.limit.domain.LimitChannelStatus channelStatus,
+                                                  top.continew.admin.merchant.limit.domain.LimitEffectiveStatus effectiveStatus,
+                                                  BigDecimal effectiveLimit,
+                                                  LocalDateTime effectiveTime,
+                                                  String channelResultCode,
+                                                  String channelResultMessage,
+                                                  Long actorUserId,
+                                                  LocalDateTime updateTime) {
+            throw new UnsupportedOperationException();
         }
 
         @Override
