@@ -194,6 +194,21 @@ merchant.kyc:
   max-per-evidence-type: ${KYC_ATTACHMENT_MAX_PER_TYPE:5}
   max-per-version: ${KYC_ATTACHMENT_MAX_PER_VERSION:20}
   access-expiry: ${KYC_ATTACHMENT_ACCESS_EXPIRY:PT5M}
+  # 仅允许在合成数据验收环境显式开启；生产环境必须保持 false 并接入真实扫描器
+  synthetic-clean-scanner-enabled: ${KYC_SYNTHETIC_CLEAN_SCANNER_ENABLED:false}
+
+--- ### 合成结算账户验证配置
+merchant.settlement:
+  # 仅允许在合成数据验收环境显式开启；生产环境必须保持 false 并接入真实验证服务
+  synthetic-verifier-enabled: ${MERCHANT_SETTLEMENT_SYNTHETIC_VERIFIER_ENABLED:false}
+
+--- ### 合成验收租户工作流部署配置
+merchant.synthetic:
+  # 仅允许在合成数据验收环境显式开启；生产环境必须保持 false
+  workflow-bootstrap-enabled: ${MERCHANT_SYNTHETIC_WORKFLOW_BOOTSTRAP_ENABLED:false}
+  workflow-tenant-id: ${MERCHANT_SYNTHETIC_WORKFLOW_TENANT_ID:0}
+  workflow-actor-user-id: ${MERCHANT_SYNTHETIC_WORKFLOW_ACTOR_USER_ID:0}
+  workflow-repair-event-id: ${MERCHANT_SYNTHETIC_WORKFLOW_REPAIR_EVENT_ID:0}
 ## 项目日志配置
 logging:
   config: classpath:logback-spring.xml

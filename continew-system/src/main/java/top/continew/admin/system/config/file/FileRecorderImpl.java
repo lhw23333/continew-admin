@@ -59,9 +59,15 @@ public class FileRecorderImpl implements FileRecorder {
         if (fileInfo.getAttr() == null) {
             return true;
         }
+        // 仅数据库托管的存储配置写入通用文件表。KYC 等独立私有存储由领域表持久化对象引用，
+        // 静态配置的平台不会携带 StorageDO 属性，不能因此阻断实际对象上传。
+        Object storageAttr = fileInfo.getAttr().get(ClassUtil.getClassName(StorageDO.class, false));
+        if (!(storageAttr instanceof StorageDO storage)) {
+            log.debug("Skip generic file recording for unmanaged storage platform [{}]", fileInfo.getPlatform());
+            return true;
+        }
         // 保存文件信息
         FileDO file = new FileDO(fileInfo);
-        StorageDO storage = (StorageDO)fileInfo.getAttr().get(ClassUtil.getClassName(StorageDO.class, false));
         file.setStorageId(storage.getId());
         fileMapper.insert(file);
         // 方便文件上传完成后获取文件信息

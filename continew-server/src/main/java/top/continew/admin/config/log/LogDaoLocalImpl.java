@@ -171,18 +171,24 @@ public class LogDaoLocalImpl implements LogDao {
         // 解析登录接口信息
         if (requestUri.startsWith(AuthConstants.LOGIN_URI) && LogStatusEnum.SUCCESS.equals(logDO.getStatus())) {
             String requestBody = logRequest.getBody();
-            logDO.setDescription(JSONUtil.toBean(requestBody, LoginReq.class).getAuthType().getDescription() + "登录");
-            // 解析账号登录用户为操作人
-            if (requestBody.contains(AuthTypeEnum.ACCOUNT.getValue())) {
+            LoginReq loginReq = JSONUtil.toBean(requestBody, LoginReq.class);
+            AuthTypeEnum authType = loginReq.getAuthType();
+            if (authType == null) {
+                logDO.setDescription("登录");
+                return;
+            }
+            logDO.setDescription(authType.getDescription() + "登录");
+            // 解析登录用户为操作人
+            if (AuthTypeEnum.ACCOUNT.equals(authType)) {
                 AccountLoginReq authReq = JSONUtil.toBean(requestBody, AccountLoginReq.class);
                 logDO.setCreateUser(ExceptionUtils.exToNull(() -> userService.getByUsername(authReq.getUsername())
                     .getId()));
                 return;
-            } else if (requestBody.contains(AuthTypeEnum.EMAIL.getValue())) {
+            } else if (AuthTypeEnum.EMAIL.equals(authType)) {
                 EmailLoginReq authReq = JSONUtil.toBean(requestBody, EmailLoginReq.class);
                 logDO.setCreateUser(ExceptionUtils.exToNull(() -> userService.getByEmail(authReq.getEmail()).getId()));
                 return;
-            } else if (requestBody.contains(AuthTypeEnum.PHONE.getValue())) {
+            } else if (AuthTypeEnum.PHONE.equals(authType)) {
                 PhoneLoginReq authReq = JSONUtil.toBean(requestBody, PhoneLoginReq.class);
                 logDO.setCreateUser(ExceptionUtils.exToNull(() -> userService.getByPhone(authReq.getPhone()).getId()));
                 return;

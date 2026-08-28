@@ -25,7 +25,7 @@ public record SecurityAuditRecord(Long tenantId, Long actorUserId, Long actorAge
                                   LocalDateTime createTime) {
 
     public SecurityAuditRecord {
-        requirePositive(tenantId, "tenantId");
+        requireNonNegative(tenantId, "tenantId");
         requirePositive(actorUserId, "actorUserId");
         requirePositive(objectId, "objectId");
         requireText(action, 64, "action");
@@ -36,6 +36,12 @@ public record SecurityAuditRecord(Long tenantId, Long actorUserId, Long actorAge
         optionalText(failureCode, 64, "failureCode");
         if (result == null || createTime == null) {
             throw new IllegalArgumentException("Security audit result and time are required");
+        }
+    }
+
+    private static void requireNonNegative(Long value, String name) {
+        if (value == null || value < 0) {
+            throw new IllegalArgumentException(name + " must not be negative");
         }
     }
 

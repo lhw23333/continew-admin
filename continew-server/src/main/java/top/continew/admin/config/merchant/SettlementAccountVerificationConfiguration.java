@@ -16,6 +16,7 @@
 
 package top.continew.admin.config.merchant;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +28,12 @@ public class SettlementAccountVerificationConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(SettlementAccountVerificationPort.class)
-    public SettlementAccountVerificationPort settlementAccountVerificationPort() {
-        return command -> new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.UNAVAILABLE, null, "NO_VERIFIER_V1");
+    public SettlementAccountVerificationPort settlementAccountVerificationPort(
+        @Value("${merchant.settlement.synthetic-verifier-enabled:false}") boolean syntheticVerifierEnabled) {
+        if (syntheticVerifierEnabled) {
+            return new SyntheticSettlementAccountVerificationAdapter();
+        }
+        return command -> new SettlementAccountVerificationPort.VerificationResult(
+            SettlementAccountVerificationPort.SettlementVerificationStatus.UNAVAILABLE, null, "NO_VERIFIER_V1");
     }
 }

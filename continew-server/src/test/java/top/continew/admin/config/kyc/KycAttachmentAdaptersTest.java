@@ -56,6 +56,9 @@ class KycAttachmentAdaptersTest {
     @Test
     void noScannerAndUnacknowledgedBucketFailClosed() {
         NoMalwareScannerAdapter scanner = new NoMalwareScannerAdapter();
+        SyntheticCleanMalwareScannerAdapter syntheticScanner = new SyntheticCleanMalwareScannerAdapter();
+        assertEquals(KycAttachmentScanStatus.CLEAN, syntheticScanner.scan(new byte[] {1}, "image/png", "a".repeat(64))
+            .status());
         assertEquals(KycAttachmentScanStatus.UNAVAILABLE, scanner.scan(new byte[] {1}, "image/png", "a".repeat(64))
             .status());
 

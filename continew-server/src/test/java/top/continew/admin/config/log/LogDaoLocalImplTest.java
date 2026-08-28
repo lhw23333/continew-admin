@@ -69,4 +69,29 @@ class LogDaoLocalImplTest {
         assertEquals(200, persisted.getStatusCode());
         assertEquals(25L, persisted.getTimeTaken());
     }
+
+    @Test
+    void handlesLoginLogWithoutAuthType() {
+        TraceProperties traceProperties = mock(TraceProperties.class);
+        when(traceProperties.getTraceIdName()).thenReturn("X-Trace-Id");
+        LogDaoLocalImpl logDao = new LogDaoLocalImpl(mock(UserService.class), mock(LogMapper.class), traceProperties,
+            new SensitiveEndpointLogSanitizer(new ObjectMapper()));
+        LogRequest request = new LogRequest(Set.of());
+        request.setMethod("POST");
+        request.setUrl(URI.create("https://localhost/auth/login"));
+        request.setHeaders(Map.of());
+        request.setBody("{\"username\":\"invalid\"}");
+        request.setIp("127.0.0.1");
+        LogResponse response = new LogResponse(Set.of());
+        response.setStatus(200);
+        response.setHeaders(Map.of());
+        response.setBody("{\"code\":1,\"msg\":\"invalid\"}");
+        LogRecord record = new LogRecord(Instant.parse("2026-08-28T04:00:00Z"), request, response, Duration
+            .ofMillis(10));
+
+        LogDO persisted = logDao.toDataObject(record);
+
+        assertEquals("登录", persisted.getDescription());
+        assertNull(persisted.getCreateUser());
+    }
 }

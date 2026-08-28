@@ -44,7 +44,7 @@ public class AgentQueryService {
             authorizedIds = scopeAuthorizationService.listAuthorizedAgentIds(tenantId, actorUserId);
         } catch (AgentAccessDeniedException ex) {
             auditDenied(tenantId, actorUserId, query.agentId(), "AGENT_LIST_SCOPE_DENIED", query.ipAddress());
-            throw ex;
+            return AgentPage.empty(query.page(), query.size());
         }
         if (query.agentId() != null && !authorizedIds.contains(query.agentId())) {
             auditDenied(tenantId, actorUserId, query.agentId(), "AGENT_LIST_FILTER_DENIED", query.ipAddress());

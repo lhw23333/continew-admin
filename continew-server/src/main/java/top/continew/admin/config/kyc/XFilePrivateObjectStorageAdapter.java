@@ -18,6 +18,7 @@ package top.continew.admin.config.kyc;
 
 import org.dromara.x.file.storage.core.FileInfo;
 import org.dromara.x.file.storage.core.FileStorageService;
+import org.dromara.x.file.storage.core.constant.Constant;
 import org.dromara.x.file.storage.core.presigned.GeneratePresignedUrlResult;
 import top.continew.admin.merchant.kyc.attachment.KycAttachmentException;
 import top.continew.admin.merchant.kyc.attachment.PrivateObjectStoragePort;
@@ -96,6 +97,7 @@ public class XFilePrivateObjectStorageAdapter implements PrivateObjectStoragePor
                 .setPlatform(reference.platform())
                 .setPath(reference.path())
                 .setFilename(reference.filename())
+                .setMethod(Constant.GeneratePresignedUrl.Method.GET)
                 .setExpiration(Date.from(expiresAt))
                 .generatePresignedUrl();
         } catch (RuntimeException ex) {
