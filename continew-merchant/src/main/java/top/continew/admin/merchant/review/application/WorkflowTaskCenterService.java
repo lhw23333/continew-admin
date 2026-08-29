@@ -109,8 +109,8 @@ public class WorkflowTaskCenterService {
             .applicationId(), context.kycVersionId())
             .orElseThrow(() -> new MerchantDomainException("KYC version is unavailable"));
         return new WorkflowTaskBusinessSummary(context.applicationId(), context.applicationNo(), mapping
-            .businessVersion(), merchant.id(), merchant.merchantNo(), merchant.shortName(), kyc.legalName(), kyc
-                .legalIdentifierMasked(), merchant.contactMobile() == null
+            .businessVersion(), context.submittedBy(), merchant.id(), merchant.merchantNo(), merchant.shortName(), kyc
+                .legalName(), kyc.legalIdentifierMasked(), merchant.contactMobile() == null
                     ? null
                     : merchant.contactMobile().maskedValue(), context.owningAgentId(), context.channelCode(), context
                         .productCode(), context.applicationStatus(), kyc.id(), kyc.versionNo(), kyc

@@ -60,6 +60,8 @@ public class MerchantProvisioningController {
     @SaCheckPermission("merchant:merchant:create")
     @PostMapping
     public MerchantProvisioningResult create(@RequestBody @Valid MerchantCreateReq req, HttpServletRequest request) {
+        ValidationUtils.throwIf(UserContextHolder.getTenantId() == null || UserContextHolder
+            .getTenantId() <= 0, "默认租户不能创建商户，请先进入业务租户");
         String operatorPassword = decrypt(req.getOperatorTemporaryPassword(), "操作员临时密码解密失败");
         String operatorConfirm = decrypt(req.getOperatorConfirmPassword(), "操作员确认密码解密失败");
         ValidationUtils.throwIfNotEqual(operatorPassword, operatorConfirm, "操作员两次输入的临时密码不一致");

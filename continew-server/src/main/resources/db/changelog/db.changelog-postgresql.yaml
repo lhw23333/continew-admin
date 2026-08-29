@@ -40,6 +40,8 @@ databaseChangeLog:
   - include:
       file: db/changelog/postgresql/merchant/workflow-task-center-menu.sql
   - include:
+      file: db/changelog/postgresql/merchant/merchant-foundation-fixes.sql
+  - include:
       file: db/changelog/postgresql/merchant/workflow-notification.sql
   - include:
       file: db/changelog/postgresql/merchant/merchant-reverification.sql

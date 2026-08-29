@@ -76,6 +76,19 @@ public class JdbcWorkflowMappingRepository implements WorkflowMappingService {
         return single(mappings);
     }
 
+    @Override
+    public boolean markEnded(Long tenantId, String processInstanceId, String workflowStatus, LocalDateTime endedTime) {
+        if (tenantId == null || tenantId <= 0 || processInstanceId == null || processInstanceId
+            .isBlank() || workflowStatus == null || workflowStatus.isBlank() || endedTime == null) {
+            return false;
+        }
+        return jdbcTemplate.update("""
+            UPDATE biz_workflow_instance
+            SET workflow_status = ?, ended_time = ?, row_version = row_version + 1, update_time = ?
+            WHERE tenant_id = ? AND process_instance_id = ? AND workflow_status = 'RUNNING' AND deleted = 0
+            """, workflowStatus, endedTime, endedTime, tenantId, processInstanceId) == 1;
+    }
+
     WorkflowInstanceMapping insert(Long mappingId,
                                    WorkflowBusinessKey businessKey,
                                    String processDefinitionId,

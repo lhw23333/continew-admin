@@ -22,6 +22,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.core.annotation.Order;
 import org.springframework.transaction.annotation.Transactional;
 import top.continew.admin.common.api.tenant.PackageMenuApi;
 import top.continew.admin.common.api.tenant.TenantApi;
@@ -58,6 +59,7 @@ import java.util.List;
  * @since 2024/12/2 20:12
  */
 @Service
+@Order(100)
 @RequiredArgsConstructor
 public class TenantDataApiForSystemImpl implements TenantDataApi {
 

@@ -23,6 +23,7 @@ import com.alicp.jetcache.anno.Cached;
 import lombok.RequiredArgsConstructor;
 import me.ahoo.cosid.provider.IdGeneratorProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.transaction.annotation.Transactional;
 import top.continew.admin.common.api.system.RoleApi;
 import top.continew.admin.common.api.system.RoleMenuApi;
@@ -49,6 +50,7 @@ import top.continew.starter.core.util.validation.CheckUtils;
 import top.continew.starter.extension.tenant.util.TenantUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,6 +74,7 @@ public class TenantServiceImpl extends BaseServiceImpl<TenantMapper, TenantDO, T
     private final RoleApi roleApi;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long create(TenantReq req) {
         this.checkNameRepeat(req.getName(), null);
         this.checkDomainRepeat(req.getDomain(), null);
@@ -83,7 +86,8 @@ public class TenantServiceImpl extends BaseServiceImpl<TenantMapper, TenantDO, T
         Long id = super.create(req);
         // 初始化租户数据
         req.setId(id);
-        tenantDataApiMap.forEach((key, value) -> value.init(BeanUtil.copyProperties(req, TenantDTO.class)));
+        TenantDTO tenant = BeanUtil.copyProperties(req, TenantDTO.class);
+        this.tenantDataApis().forEach(api -> api.init(tenant));
         return id;
     }
 
@@ -107,7 +111,7 @@ public class TenantServiceImpl extends BaseServiceImpl<TenantMapper, TenantDO, T
     public void beforeDelete(List<Long> ids) {
         // 在租户中执行数据清除
         for (Long id : ids) {
-            TenantUtils.execute(id, () -> tenantDataApiMap.forEach((key, value) -> value.clear()));
+            TenantUtils.execute(id, () -> this.tenantDataApis().forEach(TenantDataApi::clear));
         }
     }
 
@@ -236,5 +240,11 @@ public class TenantServiceImpl extends BaseServiceImpl<TenantMapper, TenantDO, T
             .stream()
             .map(TenantDO::getId)
             .toList();
+    }
+
+    private List<TenantDataApi> tenantDataApis() {
+        List<TenantDataApi> apis = new ArrayList<>(tenantDataApiMap.values());
+        AnnotationAwareOrderComparator.sort(apis);
+        return apis;
     }
 }

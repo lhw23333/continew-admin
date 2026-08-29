@@ -16,14 +16,19 @@
 
 package top.continew.admin.workflow.api;
 
-import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
-
+import java.time.LocalDateTime;
 import java.util.Optional;
 
-/** Reads project-owned business-to-process mappings without exposing Flowable entities. */
+import top.continew.admin.workflow.dto.WorkflowInstanceMapping;
+
+/** Maintains project-owned business-to-process mappings without exposing Flowable entities. */
 public interface WorkflowMappingService {
 
     Optional<WorkflowInstanceMapping> findByBusinessKey(Long tenantId, String businessKey);
 
     Optional<WorkflowInstanceMapping> findByProcessInstanceId(Long tenantId, String processInstanceId);
+
+    default boolean markEnded(Long tenantId, String processInstanceId, String workflowStatus, LocalDateTime endedTime) {
+        return false;
+    }
 }

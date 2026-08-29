@@ -21,6 +21,7 @@ import org.flowable.common.engine.api.lock.LockManager;
 import org.flowable.engine.HistoryService;
 import org.flowable.engine.ManagementService;
 import org.flowable.engine.RepositoryService;
+import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.history.HistoricActivityInstance;
 import org.flowable.engine.history.HistoricProcessInstance;
@@ -76,6 +77,7 @@ public class FlowableWorkflowService implements WorkflowService {
     private final TaskService taskService;
     private final HistoryService historyService;
     private final RepositoryService repositoryService;
+    private final RuntimeService runtimeService;
     private final ManagementService managementService;
     private final WorkflowVariablePolicy variablePolicy;
     private final FlowableWorkflowStartTransaction startTransaction;
@@ -85,6 +87,7 @@ public class FlowableWorkflowService implements WorkflowService {
     public FlowableWorkflowService(TaskService taskService,
                                    HistoryService historyService,
                                    RepositoryService repositoryService,
+                                   RuntimeService runtimeService,
                                    ManagementService managementService,
                                    WorkflowVariablePolicy variablePolicy,
                                    FlowableWorkflowStartTransaction startTransaction,
@@ -93,6 +96,7 @@ public class FlowableWorkflowService implements WorkflowService {
         this.taskService = taskService;
         this.historyService = historyService;
         this.repositoryService = repositoryService;
+        this.runtimeService = runtimeService;
         this.managementService = managementService;
         this.variablePolicy = variablePolicy;
         this.startTransaction = startTransaction;
@@ -141,6 +145,7 @@ public class FlowableWorkflowService implements WorkflowService {
         if (!isCandidate(actor, task)) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND);
         }
+        requireApplicantSeparation(actor, task);
         try {
             taskService.claim(task.getId(), userId);
         } catch (FlowableException ex) {
@@ -179,6 +184,7 @@ public class FlowableWorkflowService implements WorkflowService {
         Map<String, Object> variables = variablePolicy.validateAndCopy(command.variables());
         try {
             taskService.complete(task.getId(), userId, variables);
+            markProcessEndedIfNecessary(command.tenantId(), task.getProcessInstanceId());
         } catch (FlowableException ex) {
             throw new WorkflowOperationException(WorkflowOperationException.Code.ENGINE_FAILURE);
         }
@@ -321,6 +327,30 @@ public class FlowableWorkflowService implements WorkflowService {
         WorkflowInstanceMapping mapping = mappingService.findByProcessInstanceId(actor.tenantId(), processInstanceId)
             .orElseThrow(() -> new WorkflowOperationException(WorkflowOperationException.Code.NOT_FOUND));
         authorizationPort.requireBusinessAccess(actor, mapping.businessType(), mapping.businessId());
+    }
+
+    private void requireApplicantSeparation(WorkflowActor actor, Task task) {
+        if (!"reviewTask".equals(task.getTaskDefinitionKey()) && !"escalatedReviewTask".equals(task
+            .getTaskDefinitionKey())) {
+            return;
+        }
+        Object applicantId = runtimeService.getVariable(task.getProcessInstanceId(), "applicantId");
+        if (applicantId != null && actor.flowableUserId().equals(applicantId.toString())) {
+            throw new WorkflowOperationException(WorkflowOperationException.Code.SEPARATION_OF_DUTIES);
+        }
+    }
+
+    private void markProcessEndedIfNecessary(Long tenantId, String processInstanceId) {
+        if (runtimeService.createProcessInstanceQuery().processInstanceId(processInstanceId).singleResult() != null) {
+            return;
+        }
+        HistoricProcessInstance historic = historyService.createHistoricProcessInstanceQuery()
+            .processInstanceId(processInstanceId)
+            .singleResult();
+        LocalDateTime endedTime = historic == null || historic.getEndTime() == null
+            ? LocalDateTime.now()
+            : time(historic.getEndTime());
+        mappingService.markEnded(tenantId, processInstanceId, "COMPLETED", endedTime);
     }
 
     private boolean canAccessTask(WorkflowActor actor, String processInstanceId) {

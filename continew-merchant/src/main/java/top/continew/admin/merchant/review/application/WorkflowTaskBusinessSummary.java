@@ -18,9 +18,9 @@ package top.continew.admin.merchant.review.application;
 
 /** Masked onboarding summary displayed beside a workflow task. */
 public record WorkflowTaskBusinessSummary(Long applicationId, String applicationNo, Long businessVersion,
-                                          Long merchantId, String merchantNo, String merchantShortName,
-                                          String legalName, String legalIdentifierMasked, String contactMobileMasked,
-                                          Long owningAgentId, String channelCode, String productCode,
-                                          String applicationStatus, Long kycVersionId, Integer kycVersionNo,
-                                          Long previousKycVersionId) {
+                                          Long applicantUserId, Long merchantId, String merchantNo,
+                                          String merchantShortName, String legalName, String legalIdentifierMasked,
+                                          String contactMobileMasked, Long owningAgentId, String channelCode,
+                                          String productCode, String applicationStatus, Long kycVersionId,
+                                          Integer kycVersionNo, Long previousKycVersionId) {
 }

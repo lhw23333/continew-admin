@@ -55,6 +55,8 @@ public class SubordinateAgentController {
     @SaCheckPermission("merchant:agent:create")
     @PostMapping
     public SubordinateAgentProvisioningResult create(@RequestBody @Valid SubordinateAgentCreateReq req) {
+        ValidationUtils.throwIf(UserContextHolder.getTenantId() == null || UserContextHolder
+            .getTenantId() <= 0, "默认租户不能创建代理商，请先进入业务租户");
         String temporaryPassword = SecureUtils.decryptPasswordByRsaPrivateKey(req
             .getTemporaryPassword(), "临时密码解密失败", true);
         String confirmPassword = SecureUtils.decryptPasswordByRsaPrivateKey(req.getConfirmPassword(), "确认密码解密失败", true);

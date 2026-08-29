@@ -83,6 +83,7 @@ public class MyBatisChannelApplicationStateRepository implements ChannelApplicat
                          String businessSerial,
                          String rawStatusCode,
                          LocalDateTime updateTime) {
+        String applicationStatus = applicationStatus(merged);
         return applicationMapper.lambdaUpdate()
             .eq(OnboardingApplicationDO::getTenantId, current.tenantId())
             .eq(OnboardingApplicationDO::getId, current.applicationId())
@@ -105,9 +106,18 @@ public class MyBatisChannelApplicationStateRepository implements ChannelApplicat
             .set(OnboardingApplicationDO::getChannelFinalRank, merged.ranks().finalRank())
             .set(OnboardingApplicationDO::getChannelFinalTerminal, merged.finalTerminal())
             .set(merged.changed(), OnboardingApplicationDO::getRawChannelStatus, rawStatusCode)
+            .set(OnboardingApplicationDO::getStatus, applicationStatus)
+            .set(merged.finalTerminal(), OnboardingApplicationDO::getCompletedTime, updateTime)
             .set(OnboardingApplicationDO::getRowVersion, current.rowVersion() + 1)
             .set(OnboardingApplicationDO::getUpdateTime, updateTime)
             .update();
+    }
+
+    private String applicationStatus(ChannelStateMergeResult merged) {
+        if (!merged.finalTerminal()) {
+            return "CHANNEL_PROCESSING";
+        }
+        return ChannelStageStatus.SUCCEEDED.equals(merged.state().finalStatus()) ? "SUCCEEDED" : "FAILED";
     }
 
     private ChannelStageStatus status(ChannelStageStatus value) {
