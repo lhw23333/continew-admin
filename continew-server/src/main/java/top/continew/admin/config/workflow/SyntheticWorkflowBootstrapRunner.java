@@ -42,15 +42,14 @@ public class SyntheticWorkflowBootstrapRunner implements ApplicationRunner {
     private final long actorUserId;
     private final long repairEventId;
 
-    public SyntheticWorkflowBootstrapRunner(
-        WorkflowDeploymentService deploymentService,
-        MerchantOnboardingReviewWorkflowDefinition onboardingDefinition,
-        MerchantLimitAdjustmentWorkflowDefinition limitDefinition,
-        WorkflowOutboxProcessor outboxProcessor,
-        @Value("${merchant.synthetic.workflow-bootstrap-enabled:false}") boolean enabled,
-        @Value("${merchant.synthetic.workflow-tenant-id:0}") long tenantId,
-        @Value("${merchant.synthetic.workflow-actor-user-id:0}") long actorUserId,
-        @Value("${merchant.synthetic.workflow-repair-event-id:0}") long repairEventId) {
+    public SyntheticWorkflowBootstrapRunner(WorkflowDeploymentService deploymentService,
+                                            MerchantOnboardingReviewWorkflowDefinition onboardingDefinition,
+                                            MerchantLimitAdjustmentWorkflowDefinition limitDefinition,
+                                            WorkflowOutboxProcessor outboxProcessor,
+                                            @Value("${merchant.synthetic.workflow-bootstrap-enabled:false}") boolean enabled,
+                                            @Value("${merchant.synthetic.workflow-tenant-id:0}") long tenantId,
+                                            @Value("${merchant.synthetic.workflow-actor-user-id:0}") long actorUserId,
+                                            @Value("${merchant.synthetic.workflow-repair-event-id:0}") long repairEventId) {
         this.deploymentService = deploymentService;
         this.onboardingDefinition = onboardingDefinition;
         this.limitDefinition = limitDefinition;

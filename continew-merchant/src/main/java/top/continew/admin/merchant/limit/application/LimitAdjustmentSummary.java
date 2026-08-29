@@ -27,12 +27,12 @@ import java.time.LocalDateTime;
 /** Sanitized immutable/state summary for list and detail views. */
 public record LimitAdjustmentSummary(Long id, String requestNo, Long merchantId, String channelCode,
                                      String platformCode, String currency, BigDecimal originalLimit,
-                                     BigDecimal requestedLimit, BigDecimal normalizedLimit,
-                                     BigDecimal effectiveLimit, String reason, String eligibilityVersion,
-                                     String channelConfigVersion, String amountPolicyVersion,
-                                     String processInstanceId, LimitApprovalStatus approvalStatus,
-                                     LimitChannelStatus channelStatus, LimitEffectiveStatus effectiveStatus,
-                                     Long applicantId, LocalDateTime applicationTime, LocalDateTime approvalTime,
+                                     BigDecimal requestedLimit, BigDecimal normalizedLimit, BigDecimal effectiveLimit,
+                                     String reason, String eligibilityVersion, String channelConfigVersion,
+                                     String amountPolicyVersion, String processInstanceId,
+                                     LimitApprovalStatus approvalStatus, LimitChannelStatus channelStatus,
+                                     LimitEffectiveStatus effectiveStatus, Long applicantId,
+                                     LocalDateTime applicationTime, LocalDateTime approvalTime,
                                      LocalDateTime effectiveTime, String opinion, String channelResultCode,
                                      String channelResultMessage, Long rowVersion, LocalDateTime createTime,
                                      LocalDateTime updateTime) {

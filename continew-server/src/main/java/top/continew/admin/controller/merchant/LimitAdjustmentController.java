@@ -132,8 +132,8 @@ public class LimitAdjustmentController {
     @PostMapping("/preview")
     public LimitAdjustmentPreview preview(@PathVariable Long merchantId, @RequestBody @Valid PreviewReq req) {
         return previewService.preview(new LimitAdjustmentPreviewCommand(UserContextHolder
-            .getTenantId(), UserContextHolder.getUserId(), merchantId, req.channelCode, req.platformCode, req
-                .currency, req.requestedLimit));
+            .getTenantId(), UserContextHolder
+                .getUserId(), merchantId, req.channelCode, req.platformCode, req.currency, req.requestedLimit));
     }
 
     @Operation(summary = "确认并创建限额调整")
@@ -144,8 +144,9 @@ public class LimitAdjustmentController {
                                               HttpServletRequest request) {
         return previewService.confirm(new LimitAdjustmentConfirmCommand(UserContextHolder
             .getTenantId(), UserContextHolder.getUserId(), merchantId, req.getChannelCode(), req.getPlatformCode(), req
-                .getCurrency(), req.getRequestedLimit(), req.confirmedNormalizedLimit, req.confirmedPolicyVersion, req
-                    .reason, JakartaServletUtil.getClientIP(request)));
+                .getCurrency(), req
+                    .getRequestedLimit(), req.confirmedNormalizedLimit, req.confirmedPolicyVersion, req.reason, JakartaServletUtil
+                        .getClientIP(request)));
     }
 
     @Operation(summary = "审核限额调整任务")
@@ -157,9 +158,9 @@ public class LimitAdjustmentController {
                                                @RequestBody @Valid ReviewReq req,
                                                HttpServletRequest request) {
         requireCurrentTask(merchantId, requestId, taskId);
-        return processService.review(new LimitAdjustmentReviewCommand(UserContextHolder
-            .getTenantId(), UserContextHolder.getUserId(), taskId, req.businessVersion, req.action, req
-                .opinion, JakartaServletUtil.getClientIP(request)));
+        return processService.review(new LimitAdjustmentReviewCommand(UserContextHolder.getTenantId(), UserContextHolder
+            .getUserId(), taskId, req.businessVersion, req.action, req.opinion, JakartaServletUtil
+                .getClientIP(request)));
     }
 
     @Operation(summary = "执行限额渠道提交或查询任务")

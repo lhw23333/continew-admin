@@ -653,7 +653,8 @@ abstract class AbstractApplicationIT {
                 .finished()
                 .count());
 
-            Map<String, Object> rejectedVariables = Map.of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950202L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
+            Map<String, Object> rejectedVariables = Map
+                .of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950202L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
             org.flowable.engine.runtime.ProcessInstance rejected = processEngine.getRuntimeService()
                 .startProcessInstanceByKeyAndTenantId(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, "950:MERCHANT_LIMIT_ADJUSTMENT:950202:1", rejectedVariables, tenant);
             org.flowable.task.api.Task rejectedReview = processEngine.getTaskService()
@@ -668,7 +669,8 @@ abstract class AbstractApplicationIT {
                 .finished()
                 .count());
 
-            Map<String, Object> failedVariables = Map.of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950203L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
+            Map<String, Object> failedVariables = Map
+                .of("tenantId", tenantId, "merchantId", 950101L, "requestId", 950203L, "channelCode", "CHANNEL-L", "applicantId", 950301L, "owningAgentId", 950401L);
             org.flowable.engine.runtime.ProcessInstance failed = processEngine.getRuntimeService()
                 .startProcessInstanceByKeyAndTenantId(MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, "950:MERCHANT_LIMIT_ADJUSTMENT:950203:1", failedVariables, tenant);
             org.flowable.task.api.Task failedReview = processEngine.getTaskService()

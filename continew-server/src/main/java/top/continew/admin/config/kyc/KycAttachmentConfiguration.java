@@ -47,9 +47,7 @@ public class KycAttachmentConfiguration {
     @Bean
     @ConditionalOnMissingBean(MalwareScannerPort.class)
     public MalwareScannerPort malwareScannerPort(@Value("${merchant.kyc.synthetic-clean-scanner-enabled:false}") boolean syntheticCleanScannerEnabled) {
-        return syntheticCleanScannerEnabled
-            ? new SyntheticCleanMalwareScannerAdapter()
-            : new NoMalwareScannerAdapter();
+        return syntheticCleanScannerEnabled ? new SyntheticCleanMalwareScannerAdapter() : new NoMalwareScannerAdapter();
     }
 
     @Bean

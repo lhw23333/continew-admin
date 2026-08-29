@@ -74,8 +74,7 @@ class LogDaoLocalImplTest {
     void handlesLoginLogWithoutAuthType() {
         TraceProperties traceProperties = mock(TraceProperties.class);
         when(traceProperties.getTraceIdName()).thenReturn("X-Trace-Id");
-        LogDaoLocalImpl logDao = new LogDaoLocalImpl(mock(UserService.class), mock(LogMapper.class), traceProperties,
-            new SensitiveEndpointLogSanitizer(new ObjectMapper()));
+        LogDaoLocalImpl logDao = new LogDaoLocalImpl(mock(UserService.class), mock(LogMapper.class), traceProperties, new SensitiveEndpointLogSanitizer(new ObjectMapper()));
         LogRequest request = new LogRequest(Set.of());
         request.setMethod("POST");
         request.setUrl(URI.create("https://localhost/auth/login"));

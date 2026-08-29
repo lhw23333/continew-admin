@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import top.continew.admin.system.mapper.FileMapper;
 import top.continew.admin.system.mapper.StorageMapper;
 
-
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;

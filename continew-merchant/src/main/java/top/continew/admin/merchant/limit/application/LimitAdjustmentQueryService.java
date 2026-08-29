@@ -45,17 +45,12 @@ public class LimitAdjustmentQueryService {
     private final WorkflowService workflowService;
 
     @Transactional(readOnly = true)
-    public LimitAdjustmentPage page(Long tenantId,
-                                    Long actorUserId,
-                                    Long merchantId,
-                                    LimitAdjustmentListQuery query) {
+    public LimitAdjustmentPage page(Long tenantId, Long actorUserId, Long merchantId, LimitAdjustmentListQuery query) {
         requireTenant(tenantId);
         merchantScopeAuthorizationService.requireAccessible(tenantId, actorUserId, merchantId);
         LimitAdjustmentPageSlice slice = repository.page(tenantId, merchantId, query);
-        return new LimitAdjustmentPage(slice.list()
-            .stream()
-            .map(LimitAdjustmentSummary::from)
-            .toList(), slice.total(), query.page(), query.size());
+        return new LimitAdjustmentPage(slice.list().stream().map(LimitAdjustmentSummary::from).toList(), slice
+            .total(), query.page(), query.size());
     }
 
     @Transactional(readOnly = true)
@@ -71,18 +66,12 @@ public class LimitAdjustmentQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<LimitAdjustmentHistory> history(Long tenantId,
-                                                Long actorUserId,
-                                                Long merchantId,
-                                                Long requestId) {
+    public List<LimitAdjustmentHistory> history(Long tenantId, Long actorUserId, Long merchantId, Long requestId) {
         return get(tenantId, actorUserId, merchantId, requestId).history();
     }
 
     @Transactional(readOnly = true)
-    public WorkflowProcessHistory workflowHistory(Long tenantId,
-                                                  Long actorUserId,
-                                                  Long merchantId,
-                                                  Long requestId) {
+    public WorkflowProcessHistory workflowHistory(Long tenantId, Long actorUserId, Long merchantId, Long requestId) {
         LimitAdjustmentDetail detail = get(tenantId, actorUserId, merchantId, requestId);
         String processInstanceId = detail.request().processInstanceId();
         if (processInstanceId == null) {
@@ -100,8 +89,9 @@ public class LimitAdjustmentQueryService {
         if (mapping == null || !"MERCHANT_LIMIT_ADJUSTMENT".equals(mapping.businessType())) {
             return new WorkflowContext(null, null);
         }
-        WorkflowTask task = workflowService.pageTodo(new WorkflowTaskQuery(tenantId, actorUserId, MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, mapping
-            .businessKey(), null, false, 1, 10))
+        WorkflowTask task = workflowService
+            .pageTodo(new WorkflowTaskQuery(tenantId, actorUserId, MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, mapping
+                .businessKey(), null, false, 1, 10))
             .items()
             .stream()
             .filter(item -> mapping.processInstanceId().equals(item.processInstanceId()))

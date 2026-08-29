@@ -26,8 +26,7 @@ class SyntheticSettlementAccountVerificationAdapterTest {
     @Test
     void shouldVerifyOnlyWhenExplicitlySelectedByConfiguration() {
         SyntheticSettlementAccountVerificationAdapter adapter = new SyntheticSettlementAccountVerificationAdapter();
-        SettlementAccountVerificationPort.VerificationCommand command = new SettlementAccountVerificationPort.VerificationCommand(
-            1L, 2L, 3L, SettlementAccountVerificationPort.SettlementMode.ORDINARY, "holder", "bank", "branch", "account");
+        SettlementAccountVerificationPort.VerificationCommand command = new SettlementAccountVerificationPort.VerificationCommand(1L, 2L, 3L, SettlementAccountVerificationPort.SettlementMode.ORDINARY, "holder", "bank", "branch", "account");
         SettlementAccountVerificationPort.VerificationResult result = adapter.verify(command);
 
         assertEquals(SettlementAccountVerificationPort.SettlementVerificationStatus.VERIFIED, result.status());

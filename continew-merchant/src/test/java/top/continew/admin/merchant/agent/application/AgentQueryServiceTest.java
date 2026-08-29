@@ -46,14 +46,15 @@ class AgentQueryServiceTest {
     }
 
     private AgentRepository emptyRepository() {
-        return (AgentRepository)Proxy.newProxyInstance(AgentRepository.class.getClassLoader(), new Class<?>[] {AgentRepository.class}, (proxy, method, args) -> switch (method
-            .getName()) {
-            case "findById", "findByUserId", "findByPromotionCode" -> Optional.empty();
-            case "existsById", "existsByAgentNo", "existsByUserId", "existsByPromotionCode", "bindDepartment", "updateProfile", "updatePromotionCode", "updateLifecycle" -> false;
-            case "page" -> AgentPage.empty(1, 20);
-            case "insert" -> null;
-            default -> throw new UnsupportedOperationException(method.getName());
-        });
+        return (AgentRepository)Proxy.newProxyInstance(AgentRepository.class.getClassLoader(), new Class<?>[] {
+            AgentRepository.class}, (proxy, method, args) -> switch (method.getName()) {
+                case "findById", "findByUserId", "findByPromotionCode" -> Optional.empty();
+                case "existsById", "existsByAgentNo", "existsByUserId", "existsByPromotionCode", "bindDepartment",
+                    "updateProfile", "updatePromotionCode", "updateLifecycle" -> false;
+                case "page" -> AgentPage.empty(1, 20);
+                case "insert" -> null;
+                default -> throw new UnsupportedOperationException(method.getName());
+            });
     }
 
     private static final class DenyingScopeService extends AgentScopeAuthorizationService {

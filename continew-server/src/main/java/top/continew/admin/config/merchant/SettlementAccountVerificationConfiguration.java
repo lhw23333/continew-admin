@@ -28,12 +28,10 @@ public class SettlementAccountVerificationConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(SettlementAccountVerificationPort.class)
-    public SettlementAccountVerificationPort settlementAccountVerificationPort(
-        @Value("${merchant.settlement.synthetic-verifier-enabled:false}") boolean syntheticVerifierEnabled) {
+    public SettlementAccountVerificationPort settlementAccountVerificationPort(@Value("${merchant.settlement.synthetic-verifier-enabled:false}") boolean syntheticVerifierEnabled) {
         if (syntheticVerifierEnabled) {
             return new SyntheticSettlementAccountVerificationAdapter();
         }
-        return command -> new SettlementAccountVerificationPort.VerificationResult(
-            SettlementAccountVerificationPort.SettlementVerificationStatus.UNAVAILABLE, null, "NO_VERIFIER_V1");
+        return command -> new SettlementAccountVerificationPort.VerificationResult(SettlementAccountVerificationPort.SettlementVerificationStatus.UNAVAILABLE, null, "NO_VERIFIER_V1");
     }
 }

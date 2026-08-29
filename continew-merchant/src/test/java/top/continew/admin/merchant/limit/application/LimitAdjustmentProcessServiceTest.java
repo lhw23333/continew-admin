@@ -104,7 +104,8 @@ class LimitAdjustmentProcessServiceTest {
         repository.request = request(LimitApprovalStatus.PENDING, LimitChannelStatus.NOT_SUBMITTED, LimitEffectiveStatus.NOT_EFFECTIVE, 1L, "ACTIVE", null, null);
         workflowService.task = task("limitReviewTask", REVIEWER_ID);
 
-        LimitAdjustmentProcessResult result = service.review(new LimitAdjustmentReviewCommand(TENANT_ID, REVIEWER_ID, "TASK-1", 1L, LimitAdjustmentReviewAction.APPROVE, "Approved for channel submission", "127.0.0.1"));
+        LimitAdjustmentProcessResult result = service
+            .review(new LimitAdjustmentReviewCommand(TENANT_ID, REVIEWER_ID, "TASK-1", 1L, LimitAdjustmentReviewAction.APPROVE, "Approved for channel submission", "127.0.0.1"));
 
         assertEquals(LimitApprovalStatus.APPROVED, result.request().approvalStatus());
         assertEquals(LimitChannelStatus.NOT_SUBMITTED, result.request().channelStatus());
@@ -123,7 +124,8 @@ class LimitAdjustmentProcessServiceTest {
         ChannelResultMeta meta = new ChannelResultMeta(new ChannelProductKey("CHANNEL-A", "PRODUCT-A"), "CONNECTION-V1", "LA2301", "CHANNEL-REQ-1", "LIMIT_EFFECTIVE", "MAP-V1", ChannelOperationStatus.SUCCEEDED, "Limit effective", CURRENT_TIME);
         ChannelLimitAdjustmentResult channelResult = new ChannelLimitAdjustmentResult(meta, REQUEST_ID, "INBOUND", "CNY", new BigDecimal("2000.00"), new BigDecimal("2000.00"), ChannelLimitStatus.EFFECTIVE, CURRENT_TIME);
 
-        LimitAdjustmentProcessResult result = service.recordChannelResult(new LimitAdjustmentChannelResultCommand(TENANT_ID, CHANNEL_USER_ID, "TASK-1", 1L, channelResult, "127.0.0.1"));
+        LimitAdjustmentProcessResult result = service
+            .recordChannelResult(new LimitAdjustmentChannelResultCommand(TENANT_ID, CHANNEL_USER_ID, "TASK-1", 1L, channelResult, "127.0.0.1"));
 
         assertEquals(LimitChannelStatus.SUCCEEDED, result.request().channelStatus());
         assertEquals(LimitEffectiveStatus.EFFECTIVE, result.request().effectiveStatus());
@@ -135,8 +137,9 @@ class LimitAdjustmentProcessServiceTest {
 
     private WorkflowTask task(String taskDefinitionKey, Long assignee) {
         return new WorkflowTask("TASK-1", taskDefinitionKey, taskDefinitionKey, "PROCESS-1", "DEFINITION-1", MerchantLimitAdjustmentWorkflowDefinition.PROCESS_KEY, 1, "%s:MERCHANT_LIMIT_ADJUSTMENT:%s:1"
-            .formatted(TENANT_ID, REQUEST_ID), String.valueOf(TENANT_ID), String.valueOf(assignee), WorkflowTask.State.CLAIMED, CURRENT_TIME
-                .minusMinutes(5), CURRENT_TIME.minusMinutes(4), null, null);
+            .formatted(TENANT_ID, REQUEST_ID), String.valueOf(TENANT_ID), String
+                .valueOf(assignee), WorkflowTask.State.CLAIMED, CURRENT_TIME.minusMinutes(5), CURRENT_TIME
+                    .minusMinutes(4), null, null);
     }
 
     private LimitAdjustment request(LimitApprovalStatus approvalStatus,
@@ -148,8 +151,8 @@ class LimitAdjustmentProcessServiceTest {
                                     LocalDateTime approvalTime) {
         LocalDateTime effectiveTime = LimitEffectiveStatus.EFFECTIVE.equals(effectiveStatus) ? CURRENT_TIME : null;
         return new LimitAdjustment(REQUEST_ID, TENANT_ID, "LA2301", MERCHANT_ID, 5301L, "CHANNEL-A", "INBOUND", "CNY", new BigDecimal("500.00"), new BigDecimal("1250.00"), new BigDecimal("2000.00"), effectiveLimit, "capacity", "ELIGIBILITY-V1", "CONNECTION-V1", "POLICY-V1", "PROCESS-1", approvalStatus, channelStatus, effectiveStatus, activeGuard, 6301L, CURRENT_TIME
-            .minusHours(1), approvalTime, effectiveTime, null, null, null, rowVersion, CURRENT_TIME.minusHours(1), CURRENT_TIME
-                .minusMinutes(30));
+            .minusHours(1), approvalTime, effectiveTime, null, null, null, rowVersion, CURRENT_TIME
+                .minusHours(1), CURRENT_TIME.minusMinutes(30));
     }
 
     private LimitAdjustmentPolicy policy() {
@@ -158,9 +161,9 @@ class LimitAdjustmentProcessServiceTest {
     }
 
     private Merchant merchant() {
-        return Merchant.create(new MerchantRegistration(MERCHANT_ID, TENANT_ID, 5301L, "M-3301", MerchantType.ENTERPRISE, "Limit Merchant", "Limit", "a"
-            .repeat(64), 6301L, 6302L, "Contact", null, "Technology", "Limit merchant"), CURRENT_TIME
-                .minusDays(1));
+        return Merchant
+            .create(new MerchantRegistration(MERCHANT_ID, TENANT_ID, 5301L, "M-3301", MerchantType.ENTERPRISE, "Limit Merchant", "Limit", "a"
+                .repeat(64), 6301L, 6302L, "Contact", null, "Technology", "Limit merchant"), CURRENT_TIME.minusDays(1));
     }
 
     private final class FakeAuthorization implements WorkflowAuthorizationPort {
@@ -276,8 +279,9 @@ class LimitAdjustmentProcessServiceTest {
                                                    LocalDateTime approvalTime) {
             request = copy(request, approvalStatus, request.channelStatus(), request.effectiveStatus(), request
                 .effectiveLimit(), approvalTime, request.effectiveTime(), opinion, request.channelResultCode(), request
-                    .channelResultMessage(), LimitApprovalStatus.REJECTED.equals(approvalStatus) ? null : request
-                        .activeRequestGuard(), expectedVersion + 1);
+                    .channelResultMessage(), LimitApprovalStatus.REJECTED.equals(approvalStatus)
+                        ? null
+                        : request.activeRequestGuard(), expectedVersion + 1);
             return request;
         }
 
@@ -305,11 +309,11 @@ class LimitAdjustmentProcessServiceTest {
         @Override
         public void appendHistory(LimitAdjustmentHistoryDraft draft) {
             LimitAdjustment value = draft.request();
-            history.add(new LimitAdjustmentHistory(draft.id(), value.tenantId(), value.id(), value
-                .rowVersion(), draft.action(), value.approvalStatus(), value.channelStatus(), value
-                    .effectiveStatus(), value.originalLimit(), value.requestedLimit(), value.normalizedLimit(), value
-                        .effectiveLimit(), value.amountPolicyVersion(), draft.actorUserId(), value.opinion(), value
-                            .channelResultCode(), value.channelResultMessage(), draft.occurredTime()));
+            history.add(new LimitAdjustmentHistory(draft.id(), value.tenantId(), value.id(), value.rowVersion(), draft
+                .action(), value.approvalStatus(), value.channelStatus(), value.effectiveStatus(), value
+                    .originalLimit(), value.requestedLimit(), value.normalizedLimit(), value.effectiveLimit(), value
+                        .amountPolicyVersion(), draft.actorUserId(), value.opinion(), value.channelResultCode(), value
+                            .channelResultMessage(), draft.occurredTime()));
         }
 
         private LimitAdjustment copy(LimitAdjustment value,
@@ -325,16 +329,20 @@ class LimitAdjustmentProcessServiceTest {
                                      String activeGuard,
                                      Long rowVersion) {
             return new LimitAdjustment(value.id(), value.tenantId(), value.requestNo(), value.merchantId(), value
-                .owningAgentId(), value.channelCode(), value.platformCode(), value.currency(), value.originalLimit(), value
-                    .requestedLimit(), value.normalizedLimit(), effectiveLimit, value.reason(), value
-                        .eligibilityVersion(), value.channelConfigVersion(), value.amountPolicyVersion(), value
-                            .processInstanceId(), approvalStatus, channelStatus, effectiveStatus, activeGuard, value
-                                .applicantId(), value.applicationTime(), approvalTime, effectiveTime, opinion, resultCode, resultMessage, rowVersion, value
-                                    .createTime(), CURRENT_TIME);
+                .owningAgentId(), value.channelCode(), value.platformCode(), value.currency(), value
+                    .originalLimit(), value.requestedLimit(), value.normalizedLimit(), effectiveLimit, value
+                        .reason(), value.eligibilityVersion(), value.channelConfigVersion(), value
+                            .amountPolicyVersion(), value
+                                .processInstanceId(), approvalStatus, channelStatus, effectiveStatus, activeGuard, value
+                                    .applicantId(), value
+                                        .applicationTime(), approvalTime, effectiveTime, opinion, resultCode, resultMessage, rowVersion, value
+                                            .createTime(), CURRENT_TIME);
         }
 
         @Override
-        public Optional<LimitAdjustment> findActive(Long tenantId, Long merchantId, String channelCode,
+        public Optional<LimitAdjustment> findActive(Long tenantId,
+                                                    Long merchantId,
+                                                    String channelCode,
                                                     String platformCode) {
             throw new UnsupportedOperationException();
         }
@@ -345,8 +353,11 @@ class LimitAdjustmentProcessServiceTest {
         }
 
         @Override
-        public Optional<BigDecimal> findCurrentEffectiveLimit(Long tenantId, Long merchantId, String channelCode,
-                                                              String platformCode, String currency) {
+        public Optional<BigDecimal> findCurrentEffectiveLimit(Long tenantId,
+                                                              Long merchantId,
+                                                              String channelCode,
+                                                              String platformCode,
+                                                              String currency) {
             return Optional.of(request.originalLimit());
         }
 
@@ -356,8 +367,12 @@ class LimitAdjustmentProcessServiceTest {
         }
 
         @Override
-        public LimitAdjustment bindWorkflow(Long tenantId, Long requestId, Long expectedVersion,
-                                            String processInstanceId, Long actorUserId, LocalDateTime updateTime) {
+        public LimitAdjustment bindWorkflow(Long tenantId,
+                                            Long requestId,
+                                            Long expectedVersion,
+                                            String processInstanceId,
+                                            Long actorUserId,
+                                            LocalDateTime updateTime) {
             throw new UnsupportedOperationException();
         }
 

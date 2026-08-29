@@ -47,19 +47,20 @@ class MerchantLimitAdjustmentWorkflowDefinitionTest {
         assertEquals("failedEnd", flow(document, "flow-channel-failed").getAttribute("targetRef"));
         assertEquals("channelQueryTask", flow(document, "flow-channel-query").getAttribute("targetRef"));
         assertEquals("channelResultGateway", flow(document, "flow-channel-query-result").getAttribute("targetRef"));
-        assertTrue(flow(document, "flow-channel-effective").getTextContent()
-            .contains("channelStatus == 'EFFECTIVE'"));
+        assertTrue(flow(document, "flow-channel-effective").getTextContent().contains("channelStatus == 'EFFECTIVE'"));
         assertTrue(flow(document, "flow-channel-failed").getTextContent().contains("channelStatus == 'FAILED'"));
     }
 
     @Test
     void stableContractContainsAllLimitRoutingNodes() {
-        Set<String> nodeIds = new MerchantLimitAdjustmentWorkflowDefinition().contract().requiredNodes()
+        Set<String> nodeIds = new MerchantLimitAdjustmentWorkflowDefinition().contract()
+            .requiredNodes()
             .stream()
             .map(node -> node.nodeId())
             .collect(Collectors.toSet());
 
-        assertEquals(Set.of("start", "limitReviewTask", "reviewDecisionGateway", "channelSubmitTask", "channelResultGateway", "channelQueryTask", "rejectedEnd", "effectiveEnd", "failedEnd"), nodeIds);
+        assertEquals(Set
+            .of("start", "limitReviewTask", "reviewDecisionGateway", "channelSubmitTask", "channelResultGateway", "channelQueryTask", "rejectedEnd", "effectiveEnd", "failedEnd"), nodeIds);
     }
 
     private Document parse(byte[] bytes) throws Exception {
