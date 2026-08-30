@@ -62,15 +62,22 @@ public final class SyntheticChannelAdapter implements ChannelAdapter {
     private static final ChannelRef CHANNEL = new ChannelRef(CHANNEL_CODE);
 
     private final Clock clock;
+    private final boolean completeOnQuery;
     private final ConcurrentMap<String, OnboardingRecord> onboarding = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, OnboardingQueryRecord> onboardingQueries = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, LimitRecord> limits = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<ChannelEvent> events = new ConcurrentLinkedQueue<>();
     private final AtomicLong eventSequence = new AtomicLong();
 
     public SyntheticChannelAdapter(Clock clock) {
+        this(clock, false);
+    }
+
+    public SyntheticChannelAdapter(Clock clock, boolean completeOnQuery) {
         if (clock == null)
             throw new IllegalArgumentException("clock is invalid");
         this.clock = clock;
+        this.completeOnQuery = completeOnQuery;
     }
 
     @Override
@@ -107,9 +114,44 @@ public final class SyntheticChannelAdapter implements ChannelAdapter {
     public ChannelStatusResult queryOnboardingStatus(ChannelStatusQuery query) {
         requireChannel(query.context());
         OnboardingRecord record = onboarding.get(query.context().businessSerial());
-        if (record == null || !sameBusiness(record.command().context(), query.context()))
+        if (record != null && !sameBusiness(record.command().context(), query.context()))
+            throw notFound();
+        if (completeOnQuery) {
+            return completeOnboardingQuery(query, record);
+        }
+        if (record == null)
             throw notFound();
         return new ChannelStatusResult(record.result().meta(), record.result().state());
+    }
+
+    private ChannelStatusResult completeOnboardingQuery(ChannelStatusQuery query, OnboardingRecord submission) {
+        AtomicReference<Boolean> created = new AtomicReference<>(false);
+        OnboardingQueryRecord queryRecord = onboardingQueries.compute(query.context()
+            .businessSerial(), (serial, existing) -> {
+                if (existing != null) {
+                    if (!sameBusiness(existing.context(), query.context()))
+                        throw notFound();
+                    return existing;
+                }
+                created.set(true);
+                LocalDateTime now = now();
+                ChannelOnboardingState state = new ChannelOnboardingState(ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED, ChannelStageStatus.SUCCEEDED);
+                ChannelResultMeta meta = meta(query.context(), requestId(serial), "SYN_SUCCEEDED", ChannelOperationStatus.SUCCEEDED, "Synthetic onboarding completed", now);
+                return new OnboardingQueryRecord(query.context(), new ChannelStatusResult(meta, state));
+            });
+        if (submission != null && Boolean.TRUE.equals(created.get())) {
+            onboarding.computeIfPresent(query.context()
+                .businessSerial(), (serial, existing) -> new OnboardingRecord(existing.command(), new ChannelSubmissionResult(queryRecord
+                    .result()
+                    .meta(), queryRecord.result().state())));
+        }
+        if (Boolean.TRUE.equals(created.get())) {
+            emit(query.context(), queryRecord.result()
+                .meta()
+                .channelRequestId(), ChannelEventType.STATUS_CHANGED, queryRecord.result().meta(), queryRecord.result()
+                    .state());
+        }
+        return queryRecord.result();
     }
 
     @Override
@@ -292,6 +334,8 @@ public final class SyntheticChannelAdapter implements ChannelAdapter {
     }
 
     private record OnboardingRecord(ChannelOnboardingSubmitCommand command, ChannelSubmissionResult result) {}
+
+    private record OnboardingQueryRecord(ChannelCommandContext context, ChannelStatusResult result) {}
 
     private record LimitRecord(ChannelLimitAdjustmentCommand command, ChannelLimitAdjustmentResult result) {}
 }

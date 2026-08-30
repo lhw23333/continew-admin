@@ -82,6 +82,18 @@ class SyntheticChannelAdapterTest {
     }
 
     @Test
+    void runtimeModeCompletesQueryDeterministicallyWithoutInMemorySubmission() {
+        SyntheticChannelAdapter adapter = new SyntheticChannelAdapter(Clock
+            .fixed(Instant.parse("2026-08-24T00:00:00Z"), ZoneOffset.UTC), true);
+        ChannelStatusQuery query = new ChannelStatusQuery(context(ChannelBusinessType.ONBOARDING, "TRACE-QUERY"));
+        var first = adapter.queryOnboardingStatus(query);
+        assertEquals(ChannelOperationStatus.SUCCEEDED, first.meta().operationStatus());
+        assertEquals(ChannelStageStatus.SUCCEEDED, first.state().finalStatus());
+        assertEquals(first, adapter.queryOnboardingStatus(query));
+        assertEquals(1, adapter.drainEvents().size());
+    }
+
+    @Test
     void signingAndAccountOperationsReturnOnlyControlledValues() {
         SyntheticChannelAdapter adapter = adapter();
         ChannelOnboardingSubmitCommand command = onboardingCommand(101L);
