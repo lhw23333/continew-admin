@@ -83,14 +83,25 @@
         <if test="query.owningAgentId != null">
             AND merchant.owning_agent_id = #{query.owningAgentId}
         </if>
-        <if test="query.channelCode != null">
+        <if test="query.channelCode != null or query.applicationStatuses.size() > 0 or query.applicationUpdatedTo != null">
             AND EXISTS (
                 SELECT 1
                 FROM biz_onboarding_application channel_filter
                 WHERE channel_filter.tenant_id = merchant.tenant_id
                   AND channel_filter.merchant_id = merchant.id
-                  AND channel_filter.channel_code = #{query.channelCode}
                   AND channel_filter.deleted = 0
+                <if test="query.channelCode != null">
+                  AND channel_filter.channel_code = #{query.channelCode}
+                </if>
+                <if test="query.applicationStatuses.size() > 0">
+                  AND channel_filter.status IN
+                  <foreach collection="query.applicationStatuses" item="applicationStatus" open="(" separator="," close=")">
+                    #{applicationStatus}
+                  </foreach>
+                </if>
+                <if test="query.applicationUpdatedTo != null">
+                  AND COALESCE(channel_filter.update_time, channel_filter.create_time) &lt;= #{query.applicationUpdatedTo}
+                </if>
             )
         </if>
         <if test="query.status != null">

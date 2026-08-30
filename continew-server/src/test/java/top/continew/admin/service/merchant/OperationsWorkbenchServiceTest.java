@@ -57,15 +57,42 @@ class OperationsWorkbenchServiceTest {
             TenantContextHolder.clear();
         }
 
-        assertEquals(1, metrics.drafts());
-        assertEquals(1, metrics.submitted());
-        assertEquals(2, metrics.pendingReviews());
-        assertEquals(1, metrics.supplementTasks());
-        assertEquals(1, metrics.channelProcessing());
-        assertEquals(1, metrics.succeeded());
-        assertEquals(1, metrics.failed());
-        assertEquals(1, metrics.overdueTasks());
+        assertEquals(1, metrics.drafts().value());
+        assertEquals(1, metrics.submitted().value());
+        assertEquals(2, metrics.pendingReviews().value());
+        assertEquals(1, metrics.supplementTasks().value());
+        assertEquals(1, metrics.channelProcessing().value());
+        assertEquals(1, metrics.succeeded().value());
+        assertEquals(1, metrics.failed().value());
+        assertEquals(1, metrics.overdueTasks().value());
+        assertEquals(OperationsWorkbenchMetrics.WorkbenchAvailability.AVAILABLE, metrics.availability());
         assertEquals(OperationsWorkbenchService.BUSINESS_TIMEZONE, metrics.businessTimezone());
+
+        jdbc.execute("DROP TABLE ACT_RU_TASK");
+        OperationsWorkbenchMetrics partial = withTenant(() -> service.metrics(11L, 101L));
+        assertEquals(OperationsWorkbenchMetrics.WorkbenchAvailability.PARTIAL, partial.availability());
+        assertEquals(OperationsWorkbenchMetrics.MetricAvailability.AVAILABLE, partial.drafts().availability());
+        assertEquals(OperationsWorkbenchMetrics.MetricAvailability.STALE, partial.pendingReviews().availability());
+        assertEquals(2, partial.pendingReviews().value());
+
+        jdbc.execute("DROP TABLE biz_onboarding_application");
+        OperationsWorkbenchMetrics stale = withTenant(() -> service.metrics(11L, 101L));
+        assertEquals(OperationsWorkbenchMetrics.WorkbenchAvailability.STALE, stale.availability());
+        OperationsWorkbenchService emptyService = new OperationsWorkbenchService(authorization, jdbc);
+        OperationsWorkbenchMetrics unavailable = withTenant(() -> emptyService.metrics(11L, 101L));
+        assertEquals(OperationsWorkbenchMetrics.WorkbenchAvailability.UNAVAILABLE, unavailable.availability());
+        assertEquals(OperationsWorkbenchMetrics.MetricAvailability.UNAVAILABLE, unavailable.drafts().availability());
+    }
+
+    private OperationsWorkbenchMetrics withTenant(java.util.function.Supplier<OperationsWorkbenchMetrics> action) {
+        TenantContext context = new TenantContext();
+        context.setTenantId(11L);
+        TenantContextHolder.setContext(context);
+        try {
+            return action.get();
+        } finally {
+            TenantContextHolder.clear();
+        }
     }
 
     private void createSchema(JdbcTemplate jdbc) {

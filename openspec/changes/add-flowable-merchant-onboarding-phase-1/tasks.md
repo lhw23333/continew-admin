@@ -128,7 +128,7 @@
 ## 11. Operations Workbench and Observability
 
 - [x] 11.1 Implement scoped workbench metrics for drafts, submissions, review/supplement tasks, channel processing, outcomes, and overdue work with as-of time
-- [ ] 11.2 Implement unavailable/stale/zero metric distinction, controlled refresh, and permission-preserving drill-down filters
+- [x] 11.2 Implement unavailable/stale/zero metric distinction, controlled refresh, and permission-preserving drill-down filters
 - [ ] 11.3 Implement operational failure queue for uncertain channel calls, exhausted retries, workflow/domain drift, scan failures, and overdue tasks
 - [ ] 11.4 Correlate HTTP trace, domain command, outbox, process, task, channel serial, and scheduled-job IDs without sensitive payloads
 - [ ] 11.5 Add metrics and alerts for Flowable jobs, task age, outbox lag, callback failures, channel latency, retry exhaustion, and state invariant violations

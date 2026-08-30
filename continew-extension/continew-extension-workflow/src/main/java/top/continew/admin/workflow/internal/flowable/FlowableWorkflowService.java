@@ -250,7 +250,8 @@ public class FlowableWorkflowService implements WorkflowService {
             }
             query.endOr();
         }
-        apply(query, request.processDefinitionKey(), request.businessKey(), request.taskName());
+        apply(query, request.processDefinitionKey(), request.businessKey(), request.taskName(), request
+            .taskDefinitionKey(), request.dueBefore());
         List<WorkflowTask> authorized = taskViews(query.orderByTaskCreateTime()
             .desc()
             .list()
@@ -429,7 +430,12 @@ public class FlowableWorkflowService implements WorkflowService {
         return definition;
     }
 
-    private void apply(TaskQuery query, String processDefinitionKey, String businessKey, String taskName) {
+    private void apply(TaskQuery query,
+                       String processDefinitionKey,
+                       String businessKey,
+                       String taskName,
+                       String taskDefinitionKey,
+                       LocalDateTime dueBefore) {
         if (text(processDefinitionKey)) {
             query.processDefinitionKey(required(processDefinitionKey, PROCESS_KEY));
         }
@@ -438,6 +444,12 @@ public class FlowableWorkflowService implements WorkflowService {
         }
         if (text(taskName)) {
             query.taskNameLikeIgnoreCase("%" + filter(taskName, 100) + "%");
+        }
+        if (text(taskDefinitionKey)) {
+            query.taskDefinitionKey(required(taskDefinitionKey, ENGINE_ID));
+        }
+        if (dueBefore != null) {
+            query.taskDueBefore(Date.from(dueBefore.atZone(DATABASE_ZONE).toInstant()));
         }
     }
 

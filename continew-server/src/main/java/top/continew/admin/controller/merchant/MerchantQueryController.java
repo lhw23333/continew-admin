@@ -64,6 +64,8 @@ public class MerchantQueryController {
                              @RequestParam(required = false) MerchantType merchantType,
                              @RequestParam(required = false) Long owningAgentId,
                              @RequestParam(required = false) String channelCode,
+                             @RequestParam(required = false) String applicationStatus,
+                             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime applicationUpdatedTo,
                              @RequestParam(required = false) MerchantStatus status,
                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdFrom,
                              @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdTo,
@@ -71,7 +73,8 @@ public class MerchantQueryController {
                              @RequestParam(defaultValue = "20") int size,
                              HttpServletRequest request) {
         return merchantQueryService.page(UserContextHolder.getTenantId(), UserContextHolder
-            .getUserId(), new MerchantListQuery(merchantId, merchantNo, loginAccount, legalName, shortName, contact, legalRepresentative, merchantType, owningAgentId, channelCode, status, createdFrom, createdTo, page, size, JakartaServletUtil
+            .getUserId(), new MerchantListQuery(merchantId, merchantNo, loginAccount, legalName, shortName, contact, legalRepresentative, merchantType, owningAgentId, channelCode, MerchantListQuery
+                .parseApplicationStatuses(applicationStatus), applicationUpdatedTo, status, createdFrom, createdTo, page, size, JakartaServletUtil
                 .getClientIP(request)), permissions());
     }
 

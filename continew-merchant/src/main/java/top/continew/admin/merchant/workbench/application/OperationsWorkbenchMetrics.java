@@ -18,8 +18,27 @@ package top.continew.admin.merchant.workbench.application;
 
 import java.time.OffsetDateTime;
 
-/** Scoped operational counts captured at one business-time instant. */
-public record OperationsWorkbenchMetrics(long drafts, long submitted, long pendingReviews, long supplementTasks,
-                                          long channelProcessing, long succeeded, long failed, long overdueTasks,
-                                          String businessTimezone, OffsetDateTime asOfTime) {
+/** Scoped operational metrics with per-source freshness captured at one business-time instant. */
+public record OperationsWorkbenchMetrics(MetricValue drafts, MetricValue submitted, MetricValue pendingReviews,
+                                          MetricValue supplementTasks, MetricValue channelProcessing,
+                                          MetricValue succeeded, MetricValue failed, MetricValue overdueTasks,
+                                          WorkbenchAvailability availability, String businessTimezone,
+                                          OffsetDateTime asOfTime) {
+
+    public record MetricValue(Long value, MetricAvailability availability, OffsetDateTime asOfTime) {
+        public MetricValue {
+            if (MetricAvailability.UNAVAILABLE.equals(availability)) {
+                value = null;
+                asOfTime = null;
+            }
+        }
+    }
+
+    public enum MetricAvailability {
+        AVAILABLE, STALE, UNAVAILABLE
+    }
+
+    public enum WorkbenchAvailability {
+        AVAILABLE, PARTIAL, STALE, UNAVAILABLE
+    }
 }

@@ -17,6 +17,7 @@
 package top.continew.admin.merchant.workbench.application;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import top.continew.admin.merchant.agent.application.AgentScopeAuthorizationService;
@@ -31,6 +32,12 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+import static top.continew.admin.merchant.workbench.application.OperationsWorkbenchMetrics.MetricAvailability.AVAILABLE;
+import static top.continew.admin.merchant.workbench.application.OperationsWorkbenchMetrics.MetricAvailability.STALE;
+import static top.continew.admin.merchant.workbench.application.OperationsWorkbenchMetrics.MetricAvailability.UNAVAILABLE;
 
 /** Aggregates tenant and merchant-scope-safe phase-one operational metrics. */
 @Service
@@ -43,15 +50,89 @@ public class OperationsWorkbenchService {
     private final AgentScopeAuthorizationService agentScopeAuthorizationService;
     private final JdbcTemplate jdbcTemplate;
     private final Clock clock = Clock.system(BUSINESS_ZONE);
+    private final ConcurrentMap<CacheKey, CachedSnapshot> snapshots = new ConcurrentHashMap<>();
 
     public OperationsWorkbenchMetrics metrics(Long tenantId, Long actorUserId) {
         requireTenantContext(tenantId);
         OffsetDateTime asOfTime = OffsetDateTime.now(clock);
         Scope scope = scope(tenantId, actorUserId);
-        Map<String, Object> applications = jdbcTemplate.queryForMap(applicationSql(scope), applicationArgs(tenantId, actorUserId, scope));
-        Map<String, Object> tasks = jdbcTemplate.queryForMap(taskSql(scope), taskArgs(tenantId, actorUserId, asOfTime
-            .toLocalDateTime(), scope));
-        return new OperationsWorkbenchMetrics(number(applications, "drafts"), number(applications, "submitted"), number(tasks, "pending_reviews"), number(tasks, "supplement_tasks"), number(applications, "channel_processing"), number(applications, "succeeded"), number(applications, "failed"), number(tasks, "overdue_tasks"), BUSINESS_TIMEZONE, asOfTime);
+        CacheKey cacheKey = new CacheKey(tenantId, actorUserId, scope.agentIds());
+        CachedSnapshot cached = snapshots.get(cacheKey);
+        MetricGroup applications = applications(tenantId, actorUserId, scope, asOfTime, cached == null
+            ? null
+            : cached.applications());
+        MetricGroup tasks = tasks(tenantId, actorUserId, scope, asOfTime, cached == null ? null : cached.tasks());
+        cache(cacheKey, cached, applications, tasks);
+        return new OperationsWorkbenchMetrics(metric(applications, "drafts"), metric(applications, "submitted"), metric(tasks, "pending_reviews"), metric(tasks, "supplement_tasks"), metric(applications, "channel_processing"), metric(applications, "succeeded"), metric(applications, "failed"), metric(tasks, "overdue_tasks"), availability(applications, tasks), BUSINESS_TIMEZONE, asOfTime);
+    }
+
+    private MetricGroup applications(Long tenantId,
+                                     Long actorUserId,
+                                     Scope scope,
+                                     OffsetDateTime asOfTime,
+                                     MetricGroup cached) {
+        try {
+            return new MetricGroup(jdbcTemplate
+                .queryForMap(applicationSql(scope), applicationArgs(tenantId, actorUserId, scope)), AVAILABLE, asOfTime);
+        } catch (DataAccessException ex) {
+            return fallback(cached);
+        }
+    }
+
+    private MetricGroup tasks(Long tenantId,
+                              Long actorUserId,
+                              Scope scope,
+                              OffsetDateTime asOfTime,
+                              MetricGroup cached) {
+        try {
+            return new MetricGroup(jdbcTemplate.queryForMap(taskSql(scope), taskArgs(tenantId, actorUserId, asOfTime
+                .toLocalDateTime(), scope)), AVAILABLE, asOfTime);
+        } catch (DataAccessException ex) {
+            return fallback(cached);
+        }
+    }
+
+    private MetricGroup fallback(MetricGroup cached) {
+        return cached == null
+            ? new MetricGroup(Map.of(), UNAVAILABLE, null)
+            : new MetricGroup(cached.values(), STALE, cached.asOfTime());
+    }
+
+    private void cache(CacheKey key,
+                       CachedSnapshot previous,
+                       MetricGroup applications,
+                       MetricGroup tasks) {
+        MetricGroup applicationSnapshot = AVAILABLE.equals(applications.availability())
+            ? applications
+            : previous == null ? null : previous.applications();
+        MetricGroup taskSnapshot = AVAILABLE.equals(tasks.availability())
+            ? tasks
+            : previous == null ? null : previous.tasks();
+        if (applicationSnapshot != null || taskSnapshot != null) {
+            snapshots.put(key, new CachedSnapshot(applicationSnapshot, taskSnapshot));
+        }
+    }
+
+    private OperationsWorkbenchMetrics.MetricValue metric(MetricGroup group, String key) {
+        if (UNAVAILABLE.equals(group.availability())) {
+            return new OperationsWorkbenchMetrics.MetricValue(null, UNAVAILABLE, null);
+        }
+        return new OperationsWorkbenchMetrics.MetricValue(number(group.values(), key), group
+            .availability(), group.asOfTime());
+    }
+
+    private OperationsWorkbenchMetrics.WorkbenchAvailability availability(MetricGroup applications,
+                                                                           MetricGroup tasks) {
+        if (AVAILABLE.equals(applications.availability()) && AVAILABLE.equals(tasks.availability())) {
+            return OperationsWorkbenchMetrics.WorkbenchAvailability.AVAILABLE;
+        }
+        if (UNAVAILABLE.equals(applications.availability()) && UNAVAILABLE.equals(tasks.availability())) {
+            return OperationsWorkbenchMetrics.WorkbenchAvailability.UNAVAILABLE;
+        }
+        if (STALE.equals(applications.availability()) && STALE.equals(tasks.availability())) {
+            return OperationsWorkbenchMetrics.WorkbenchAvailability.STALE;
+        }
+        return OperationsWorkbenchMetrics.WorkbenchAvailability.PARTIAL;
     }
 
     private Scope scope(Long tenantId, Long actorUserId) {
@@ -135,6 +216,23 @@ public class OperationsWorkbenchService {
                 : "m.owning_agent_id IN (" + String.join(",", java.util.Collections
                     .nCopies(agentIds.size(), "?")) + ")";
             return "(" + agentPredicate + " OR m.operator_user_id = ? OR m.reviewer_user_id = ?)";
+        }
+    }
+
+    private record MetricGroup(Map<String, Object> values,
+                               OperationsWorkbenchMetrics.MetricAvailability availability,
+                               OffsetDateTime asOfTime) {
+        private MetricGroup {
+            values = Map.copyOf(values);
+        }
+    }
+
+    private record CachedSnapshot(MetricGroup applications, MetricGroup tasks) {
+    }
+
+    private record CacheKey(Long tenantId, Long actorUserId, List<Long> agentIds) {
+        private CacheKey {
+            agentIds = List.copyOf(agentIds);
         }
     }
 }

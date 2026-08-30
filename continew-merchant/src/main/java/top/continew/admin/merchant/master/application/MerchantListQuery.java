@@ -20,13 +20,20 @@ import top.continew.admin.merchant.master.domain.MerchantStatus;
 import top.continew.admin.merchant.master.domain.MerchantType;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /** Combined merchant filters with bounded deterministic pagination. */
 public record MerchantListQuery(Long merchantId, String merchantNo, String loginAccount, String legalName,
                                 String shortName, String contact, String legalRepresentative, MerchantType merchantType,
-                                Long owningAgentId, String channelCode, MerchantStatus status,
-                                LocalDateTime createdFrom, LocalDateTime createdTo, int page, int size,
-                                String ipAddress) {
+                                Long owningAgentId, String channelCode, List<String> applicationStatuses,
+                                LocalDateTime applicationUpdatedTo, MerchantStatus status, LocalDateTime createdFrom,
+                                LocalDateTime createdTo, int page, int size, String ipAddress) {
+
+    private static final Set<String> APPLICATION_STATUSES = Set
+        .of("DRAFT", "SUBMITTED", "SUPPLEMENT_REQUIRED", "APPROVED", "REJECTED", "CHANNEL_PROCESSING", "SUCCEEDED", "FAILED");
 
     public MerchantListQuery {
         requirePositive(merchantId, "merchantId");
@@ -38,6 +45,12 @@ public record MerchantListQuery(Long merchantId, String merchantNo, String login
         contact = normalize(contact, 100, "contact");
         legalRepresentative = normalize(legalRepresentative, 100, "legalRepresentative");
         channelCode = normalize(channelCode, 64, "channelCode");
+        applicationStatuses = applicationStatuses == null ? List.of() : applicationStatuses.stream().map(statusValue -> statusValue
+            .trim()
+            .toUpperCase(Locale.ROOT)).filter(statusValue -> !statusValue.isEmpty()).distinct().sorted().toList();
+        if (!APPLICATION_STATUSES.containsAll(applicationStatuses)) {
+            throw new IllegalArgumentException("Onboarding application status filter is invalid");
+        }
         if (createdFrom != null && createdTo != null && createdFrom.isAfter(createdTo)) {
             throw new IllegalArgumentException("Merchant creation range is invalid");
         }
@@ -45,6 +58,32 @@ public record MerchantListQuery(Long merchantId, String merchantNo, String login
             throw new IllegalArgumentException("Merchant page parameters are invalid");
         }
         ipAddress = normalize(ipAddress, 128, "ipAddress");
+    }
+
+    public MerchantListQuery(Long merchantId,
+                             String merchantNo,
+                             String loginAccount,
+                             String legalName,
+                             String shortName,
+                             String contact,
+                             String legalRepresentative,
+                             MerchantType merchantType,
+                             Long owningAgentId,
+                             String channelCode,
+                             MerchantStatus status,
+                             LocalDateTime createdFrom,
+                             LocalDateTime createdTo,
+                             int page,
+                             int size,
+                             String ipAddress) {
+        this(merchantId, merchantNo, loginAccount, legalName, shortName, contact, legalRepresentative, merchantType, owningAgentId, channelCode, List
+            .of(), null, status, createdFrom, createdTo, page, size, ipAddress);
+    }
+
+    public static List<String> parseApplicationStatuses(String value) {
+        return value == null || value.isBlank()
+            ? List.of()
+            : Arrays.stream(value.split(",")).toList();
     }
 
     private static void requirePositive(Long value, String name) {

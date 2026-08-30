@@ -1119,6 +1119,14 @@ abstract class AbstractApplicationIT {
                 processEngine.getTaskService()
                     .setDueDate(initialReviewTask.taskId(), java.util.Date.from(java.time.Instant.now()
                         .minusSeconds(60)));
+                WorkflowPage<WorkflowTask> overdueTasks = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, riskUserId, processKey, approveFlow
+                        .businessKey(), null, null, LocalDateTime.now(), false, 1, 20));
+                org.junit.jupiter.api.Assertions.assertEquals(List.of(initialReviewTask.taskId()), overdueTasks
+                    .items()
+                    .stream()
+                    .map(WorkflowTask::taskId)
+                    .toList());
                 WorkflowNotificationBatchResult firstNotifications = workflowTaskNotificationProcessor
                     .process(200, 200);
                 org.junit.jupiter.api.Assertions.assertEquals(2, firstNotifications.enqueued());
@@ -1155,6 +1163,14 @@ abstract class AbstractApplicationIT {
                         .businessKey(), null, true, 1, 20))
                     .items()
                     .get(0);
+                WorkflowPage<WorkflowTask> supplementTasks = workflowService
+                    .pageTodo(new WorkflowTaskQuery(tenantId, applicantUserId, processKey, approveFlow
+                        .businessKey(), null, "supplementTask", null, true, 1, 20));
+                org.junit.jupiter.api.Assertions.assertEquals(List.of(supplementTask.taskId()), supplementTasks
+                    .items()
+                    .stream()
+                    .map(WorkflowTask::taskId)
+                    .toList());
                 OnboardingSupplementDraft supplementDraft = onboardingSupplementService
                     .create(tenantId, applicantUserId, merchantId, applicationApproveId, supplementTask
                         .taskId(), approveSourceKycVersionId, "127.0.0.1");
@@ -2446,6 +2462,14 @@ abstract class AbstractApplicationIT {
             MerchantPage combined = merchantQueryService
                 .page(tenantId, rootUserId, new MerchantListQuery(null, null, null, "Legal MER-CHILD", null, "Contact", "Alice", MerchantType.ENTERPRISE, childAgentId, "CHANNEL-A", MerchantStatus.ENABLED, null, null, 1, 20, "127.0.0.1"), permissions);
             org.junit.jupiter.api.Assertions.assertEquals(List.of(childMerchantId), combined.list()
+                .stream()
+                .map(item -> item.id())
+                .toList());
+
+            MerchantPage failedAsOf = merchantQueryService
+                .page(tenantId, rootUserId, new MerchantListQuery(null, null, null, null, null, null, null, null, null, null, List
+                    .of("FAILED"), baseTime.plusMinutes(1), null, null, null, 1, 20, "127.0.0.1"), permissions);
+            org.junit.jupiter.api.Assertions.assertEquals(List.of(childMerchantId), failedAsOf.list()
                 .stream()
                 .map(item -> item.id())
                 .toList());

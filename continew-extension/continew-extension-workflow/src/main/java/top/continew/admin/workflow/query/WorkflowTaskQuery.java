@@ -16,7 +16,21 @@
 
 package top.continew.admin.workflow.query;
 
+import java.time.LocalDateTime;
+
 /** Tenant-scoped todo/claimed query; candidate role codes are always resolved server-side. */
 public record WorkflowTaskQuery(Long tenantId, Long userId, String processDefinitionKey, String businessKey,
-                                String taskName, boolean claimedOnly, int page, int size) {
+                                String taskName, String taskDefinitionKey, LocalDateTime dueBefore,
+                                boolean claimedOnly, int page, int size) {
+
+    public WorkflowTaskQuery(Long tenantId,
+                             Long userId,
+                             String processDefinitionKey,
+                             String businessKey,
+                             String taskName,
+                             boolean claimedOnly,
+                             int page,
+                             int size) {
+        this(tenantId, userId, processDefinitionKey, businessKey, taskName, null, null, claimedOnly, page, size);
+    }
 }

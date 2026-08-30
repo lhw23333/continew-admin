@@ -29,6 +29,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,6 +59,7 @@ import top.continew.admin.workflow.query.WorkflowDoneQuery;
 import top.continew.admin.workflow.query.WorkflowTaskQuery;
 import top.continew.starter.log.annotation.Log;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /** Scoped onboarding human-review actions. */
@@ -79,10 +81,12 @@ public class WorkflowReviewController {
     public WorkflowTaskPageResp todo(@RequestParam(required = false) String processDefinitionKey,
                                      @RequestParam(required = false) String businessKey,
                                      @RequestParam(required = false) String taskName,
+                                     @RequestParam(required = false) String taskDefinitionKey,
+                                     @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dueBefore,
                                      @RequestParam(defaultValue = "1") int page,
                                      @RequestParam(defaultValue = "20") int size) {
         return page(taskCenterService.pageTodo(new WorkflowTaskQuery(UserContextHolder.getTenantId(), UserContextHolder
-            .getUserId(), onboardingProcessKey(processDefinitionKey), businessKey, taskName, false, page, size)));
+            .getUserId(), onboardingProcessKey(processDefinitionKey), businessKey, taskName, taskDefinitionKey, dueBefore, false, page, size)));
     }
 
     @Log(ignore = true)
@@ -92,10 +96,12 @@ public class WorkflowReviewController {
     public WorkflowTaskPageResp claimed(@RequestParam(required = false) String processDefinitionKey,
                                         @RequestParam(required = false) String businessKey,
                                         @RequestParam(required = false) String taskName,
+                                        @RequestParam(required = false) String taskDefinitionKey,
+                                        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime dueBefore,
                                         @RequestParam(defaultValue = "1") int page,
                                         @RequestParam(defaultValue = "20") int size) {
         return page(taskCenterService.pageTodo(new WorkflowTaskQuery(UserContextHolder.getTenantId(), UserContextHolder
-            .getUserId(), onboardingProcessKey(processDefinitionKey), businessKey, taskName, true, page, size)));
+            .getUserId(), onboardingProcessKey(processDefinitionKey), businessKey, taskName, taskDefinitionKey, dueBefore, true, page, size)));
     }
 
     @Log(ignore = true)
