@@ -1242,11 +1242,11 @@ abstract class AbstractApplicationIT {
                         .businessKey(), null, false, 1, 20))
                     .items()
                     .get(0);
-                workflowService.claim(new ClaimTaskCommand(tenantId, selfReviewTask.taskId(), applicantUserId));
+                WorkflowOperationException selfReviewClaim = org.junit.jupiter.api.Assertions
+                    .assertThrows(WorkflowOperationException.class, () -> workflowService
+                        .claim(new ClaimTaskCommand(tenantId, selfReviewTask.taskId(), applicantUserId)));
                 org.junit.jupiter.api.Assertions
-                    .assertThrows(MerchantDomainException.class, () -> onboardingReviewService
-                        .review(new OnboardingReviewCommand(tenantId, applicantUserId, selfReviewTask
-                            .taskId(), 3L, OnboardingReviewAction.APPROVE, "Self review", List.of(), "127.0.0.1")));
+                    .assertEquals(WorkflowOperationException.Code.SEPARATION_OF_DUTIES, selfReviewClaim.code());
 
                 WorkflowRef concurrentFlow = startReviewWorkflow(tenantId, processKey, applicationConcurrentId, 4L, merchantId, merchantAgentId, applicantUserId);
                 WorkflowTask concurrentTask = workflowService
